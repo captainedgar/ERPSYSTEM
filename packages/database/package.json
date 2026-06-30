@@ -1,0 +1,37 @@
+{
+  "name": "@comercia/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "npm run db:generate && tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings=0",
+    "test": "node --test",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "db:validate": "dotenv -e ../../.env -- prisma validate",
+    "db:format": "dotenv -e ../../.env -- prisma format"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.0",
+    "dotenv-cli": "^7.4.4",
+    "effect": "3.21.0",
+    "eslint": "^9.39.1",
+    "prisma": "^6.19.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2"
+  }
+}
