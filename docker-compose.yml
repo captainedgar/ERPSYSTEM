@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: comercia-erp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: comercia
+      POSTGRES_PASSWORD: comercia_dev_password
+      POSTGRES_DB: comercia_erp
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U comercia -d comercia_erp']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:
