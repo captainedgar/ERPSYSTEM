@@ -57,6 +57,23 @@ enum PermissionAction {
   DISABLE
 }
 
+enum Currency {
+  DOP
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  CREDIT
+}
+
+enum DocumentType {
+  INTERNAL_RECEIPT
+  CONSUMER_INVOICE
+  FISCAL_INVOICE
+}
+
 model Company {
   id           String            @id @default(cuid())
   name         String
@@ -187,16 +204,27 @@ model UserSession {
 }
 
 model BusinessSettings {
-  id                      String   @id @default(cuid())
-  companyId               String   @unique
-  currency                String   @default("DOP")
-  taxRate                 Decimal  @default(18) @db.Decimal(5, 2)
-  allowNegativeStock      Boolean  @default(false)
-  requireOpenCashForSales Boolean  @default(true)
-  receiptFooterText       String?
-  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                       String          @id @default(cuid())
+  companyId                String          @unique
+  currency                 Currency        @default(DOP)
+  taxRate                  Decimal         @default(18) @db.Decimal(5, 2)
+  allowNegativeStock       Boolean         @default(false)
+  requireOpenCashForSales  Boolean         @default(true)
+  defaultDocumentType      DocumentType    @default(INTERNAL_RECEIPT)
+  defaultPaymentMethod     PaymentMethod   @default(CASH)
+  enabledPaymentMethods    PaymentMethod[] @default([CASH, CARD, TRANSFER])
+  receiptFooterText        String?
+  printLogo                Boolean         @default(true)
+  posQuickSaleMode         Boolean         @default(false)
+  posShowStock             Boolean         @default(true)
+  posAllowDiscounts        Boolean         @default(true)
+  cashRequireOpeningAmount Boolean         @default(true)
+  cashAllowExpenses        Boolean         @default(true)
+  onboardingCompleted      Boolean         @default(false)
+  onboardingCompletedAt    DateTime?
+  company                  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   @@map("business_settings")
 }

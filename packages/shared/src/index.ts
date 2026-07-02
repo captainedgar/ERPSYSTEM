@@ -48,6 +48,48 @@ export enum PermissionAction {
   DISABLE = 'DISABLE',
 }
 
+export enum Currency {
+  DOP = 'DOP',
+}
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  CARD = 'CARD',
+  TRANSFER = 'TRANSFER',
+  CREDIT = 'CREDIT',
+}
+
+export enum DocumentType {
+  INTERNAL_RECEIPT = 'INTERNAL_RECEIPT',
+  CONSUMER_INVOICE = 'CONSUMER_INVOICE',
+  FISCAL_INVOICE = 'FISCAL_INVOICE',
+}
+
+export const DEFAULT_TAX_RATES = {
+  EXEMPT: 0,
+  REDUCED: 16,
+  STANDARD: 18,
+} as const;
+
+export type DefaultTaxRate =
+  (typeof DEFAULT_TAX_RATES)[keyof typeof DEFAULT_TAX_RATES];
+
+export enum BusinessTemplate {
+  SMALL_STORE = 'SMALL_STORE',
+  BEAUTY_SALON = 'BEAUTY_SALON',
+  BARBERSHOP = 'BARBERSHOP',
+  MINIMARKET = 'MINIMARKET',
+  GROCERY = 'GROCERY',
+  TIRE_SHOP = 'TIRE_SHOP',
+  AUTO_PARTS = 'AUTO_PARTS',
+  HARDWARE_STORE = 'HARDWARE_STORE',
+  CLOTHING_STORE = 'CLOTHING_STORE',
+  PHONE_STORE = 'PHONE_STORE',
+  COSMETICS_STORE = 'COSMETICS_STORE',
+  SERVICE_BUSINESS = 'SERVICE_BUSINESS',
+  OTHER = 'OTHER',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

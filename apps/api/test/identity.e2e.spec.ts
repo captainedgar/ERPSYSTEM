@@ -1,6 +1,8 @@
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
+  BusinessType,
+  PaymentMethod,
   PrismaClient,
   UserRole,
   type Branch,
@@ -39,6 +41,8 @@ interface RoleResponse {
   code: UserRole;
   name: string;
 }
+
+type SettingsResponse = BusinessSettings & { businessType: BusinessType };
 
 interface HttpResult<T> {
   status: number;
@@ -434,19 +438,19 @@ describe('Identity and multi-company isolation (e2e)', () => {
   it('reads and updates only the authenticated company settings', async () => {
     const companyA = await registerCompany('settings-a');
     const companyB = await registerCompany('settings-b');
-    const initial = await http<BusinessSettings>(
+    const initial = await http<SettingsResponse>(
       'GET',
       '/business-settings',
       undefined,
       companyA.accessToken,
     );
-    const updated = await http<BusinessSettings>(
+    const updated = await http<SettingsResponse>(
       'PATCH',
       '/business-settings',
-      { currency: 'usd', taxRate: 16 },
+      { currency: 'DOP', taxRate: 16 },
       companyA.accessToken,
     );
-    const settingsB = await http<BusinessSettings>(
+    const settingsB = await http<SettingsResponse>(
       'GET',
       '/business-settings',
       undefined,
@@ -456,10 +460,154 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(initial.status).toBe(200);
     expect(initial.body.companyId).toBe(companyA.company.id);
     expect(updated.body.companyId).toBe(companyA.company.id);
-    expect(updated.body.currency).toBe('USD');
+    expect(updated.body.currency).toBe('DOP');
     expect(Number(updated.body.taxRate)).toBe(16);
     expect(settingsB.body.companyId).toBe(companyB.company.id);
     expect(settingsB.body.currency).toBe('DOP');
+  });
+
+  it('allows owners and admins to update settings and rejects unauthorized users', async () => {
+    const registered = await registerCompany('settings-permissions');
+    const roles = await getRoles(registered.accessToken);
+    const admin = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.ADMIN).id,
+      registered.branch.id,
+      'settings-admin',
+    );
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'settings-cashier',
+    );
+    const adminLogin = await login(admin.email);
+    const cashierLogin = await login(cashier.email);
+
+    const anonymous = await http<unknown>('GET', '/business-settings');
+    const ownerUpdate = await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { receiptFooterText: 'Gracias por su compra' },
+      registered.accessToken,
+    );
+    const adminUpdate = await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { taxRate: 18, printLogo: false },
+      adminLogin.accessToken,
+    );
+    const cashierRead = await http<unknown>(
+      'GET',
+      '/business-settings',
+      undefined,
+      cashierLogin.accessToken,
+    );
+    const cashierUpdate = await http<unknown>(
+      'PATCH',
+      '/business-settings',
+      { taxRate: 0 },
+      cashierLogin.accessToken,
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(ownerUpdate.status).toBe(200);
+    expect(ownerUpdate.body.receiptFooterText).toBe('Gracias por su compra');
+    expect(adminUpdate.status).toBe(200);
+    expect(adminUpdate.body.printLogo).toBe(false);
+    expect(cashierRead.status).toBe(403);
+    expect(cashierUpdate.status).toBe(403);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          companyId: registered.company.id,
+          action: 'BUSINESS_SETTINGS_UPDATED',
+        },
+      }),
+    ).toBe(2);
+  });
+
+  it('applies templates and completes onboarding without crossing companies', async () => {
+    const companyA = await registerCompany('template-a');
+    const companyB = await registerCompany('template-b');
+    const templates = await http<Array<{ id: BusinessType }>>(
+      'GET',
+      '/business-settings/templates',
+      undefined,
+      companyA.accessToken,
+    );
+    const applied = await http<SettingsResponse>(
+      'POST',
+      '/business-settings/apply-template',
+      { businessType: BusinessType.MINIMARKET },
+      companyA.accessToken,
+    );
+    const completed = await http<SettingsResponse>(
+      'POST',
+      '/business-settings/complete-onboarding',
+      undefined,
+      companyA.accessToken,
+    );
+    const settingsB = await http<SettingsResponse>(
+      'GET',
+      '/business-settings',
+      undefined,
+      companyB.accessToken,
+    );
+    const invalidTax = await http<unknown>(
+      'PATCH',
+      '/business-settings',
+      { taxRate: 101 },
+      companyA.accessToken,
+    );
+    const invalidPayments = await http<unknown>(
+      'PATCH',
+      '/business-settings',
+      { enabledPaymentMethods: ['BITCOIN'] },
+      companyA.accessToken,
+    );
+    const inconsistentDefaultPayment = await http<unknown>(
+      'PATCH',
+      '/business-settings',
+      {
+        defaultPaymentMethod: PaymentMethod.CARD,
+        enabledPaymentMethods: [PaymentMethod.CASH],
+      },
+      companyA.accessToken,
+    );
+    const auditActions = await prisma.auditLog.findMany({
+      where: {
+        companyId: companyA.company.id,
+        action: {
+          in: ['BUSINESS_TEMPLATE_APPLIED', 'ONBOARDING_COMPLETED'],
+        },
+      },
+      select: { action: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    expect(templates.status).toBe(200);
+    expect(templates.body).toHaveLength(Object.values(BusinessType).length);
+    expect(applied.status).toBe(201);
+    expect(applied.body.businessType).toBe(BusinessType.MINIMARKET);
+    expect(applied.body.posQuickSaleMode).toBe(true);
+    expect(applied.body.enabledPaymentMethods).toEqual([
+      PaymentMethod.CASH,
+      PaymentMethod.CARD,
+      PaymentMethod.TRANSFER,
+    ]);
+    expect(completed.status).toBe(201);
+    expect(completed.body.onboardingCompleted).toBe(true);
+    expect(completed.body.onboardingCompletedAt).not.toBeNull();
+    expect(settingsB.body.businessType).toBe(BusinessType.SMALL_STORE);
+    expect(settingsB.body.posQuickSaleMode).toBe(false);
+    expect(invalidTax.status).toBe(400);
+    expect(invalidPayments.status).toBe(400);
+    expect(inconsistentDefaultPayment.status).toBe(400);
+    expect(auditActions.map(({ action }) => action)).toEqual([
+      'BUSINESS_TEMPLATE_APPLIED',
+      'ONBOARDING_COMPLETED',
+    ]);
   });
 });
 
