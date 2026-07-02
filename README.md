@@ -36,6 +36,18 @@ npm run test
 npm run format:check
 ```
 
+Las pruebas E2E requieren PostgreSQL activo y se pueden ejecutar por separado:
+
+```powershell
+docker compose up -d
+npm run test:e2e
+```
+
+La suite usa `TEST_DATABASE_URL` si está definida; de lo contrario usa la
+instancia local de Docker. En ambos casos crea un esquema aislado con prefijo
+`e2e_`, aplica el esquema Prisma y lo elimina al terminar. No limpia ni modifica
+el esquema de desarrollo.
+
 La Fase 2 cubre autenticación, empresas, sucursales, usuarios, roles, permisos,
 sesiones, configuración básica y auditoría. No incluye productos, inventario,
 POS, caja, ventas ni integración fiscal.
