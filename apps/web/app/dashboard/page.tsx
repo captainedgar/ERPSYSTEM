@@ -59,6 +59,13 @@ export default function DashboardPage() {
             >
               Configurar el negocio
             </Link>
+            <span className="mx-3 text-slate-700">·</span>
+            <Link
+              className="font-semibold text-emerald-400 hover:text-emerald-300"
+              href="/catalog/products"
+            >
+              Administrar catálogo
+            </Link>
           </div>
         </section>
       </div>

@@ -13,10 +13,43 @@ const ROLE_NAMES: Record<UserRole, string> = {
 };
 
 const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
-  CASHIER: ['branches.view'],
-  SELLER: ['branches.view'],
-  WAREHOUSE: ['branches.view'],
-  ACCOUNTING: ['companies.view', 'branches.view'],
+  CASHIER: [
+    'branches.view',
+    'categories.view',
+    'brands.view',
+    'units.view',
+    'products.view',
+    'services.view',
+  ],
+  SELLER: [
+    'branches.view',
+    'categories.view',
+    'brands.view',
+    'units.view',
+    'products.view',
+    'services.view',
+  ],
+  WAREHOUSE: [
+    'branches.view',
+    'categories.view',
+    'categories.create',
+    'categories.update',
+    'brands.view',
+    'brands.create',
+    'brands.update',
+    'units.view',
+    'units.create',
+    'units.update',
+    'products.view',
+    'products.create',
+    'products.update',
+  ],
+  ACCOUNTING: [
+    'companies.view',
+    'branches.view',
+    'products.view',
+    'services.view',
+  ],
 };
 
 @Injectable()

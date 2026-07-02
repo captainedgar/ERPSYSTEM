@@ -90,6 +90,17 @@ export enum BusinessTemplate {
   OTHER = 'OTHER',
 }
 
+export enum CatalogStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum CategoryType {
+  PRODUCT = 'PRODUCT',
+  SERVICE = 'SERVICE',
+  BOTH = 'BOTH',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

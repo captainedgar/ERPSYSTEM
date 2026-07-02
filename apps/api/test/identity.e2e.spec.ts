@@ -2,11 +2,17 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   BusinessType,
+  CatalogStatus,
+  CategoryType,
   PaymentMethod,
   PrismaClient,
   UserRole,
   type Branch,
   type BusinessSettings,
+  type Category,
+  type Product,
+  type Service,
+  type Unit,
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -609,6 +615,236 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'ONBOARDING_COMPLETED',
     ]);
   });
+
+  it('creates and manages categories, brands, units, products and services', async () => {
+    const registered = await registerCompany('catalog-crud');
+    const category = await http<Category>(
+      'POST',
+      '/categories',
+      {
+        name: 'Catálogo general',
+        type: CategoryType.BOTH,
+        description: 'Productos y servicios',
+      },
+      registered.accessToken,
+    );
+    const brand = await http<{ id: string; name: string }>(
+      'POST',
+      '/brands',
+      { name: 'Marca local' },
+      registered.accessToken,
+    );
+    const unit = await http<Unit>(
+      'POST',
+      '/units',
+      { name: 'Kilogramo', code: 'KG', allowsDecimals: true },
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto de prueba',
+        categoryId: category.body.id,
+        brandId: brand.body.id,
+        unitId: unit.body.id,
+        sku: 'SKU-001',
+        barcode: '746000000001',
+        cost: 50,
+        price: 100,
+        taxRate: 18,
+        stock: 5,
+        minStock: 1,
+        trackInventory: true,
+        allowDiscount: true,
+      },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      {
+        name: 'Servicio de prueba',
+        categoryId: category.body.id,
+        price: 500,
+        taxRate: 18,
+        durationMinutes: 45,
+      },
+      registered.accessToken,
+    );
+    const products = await http<Product[]>(
+      'GET',
+      '/products?search=SKU-001',
+      undefined,
+      registered.accessToken,
+    );
+    const services = await http<Service[]>(
+      'GET',
+      '/services?search=Servicio',
+      undefined,
+      registered.accessToken,
+    );
+    const updatedProduct = await http<Product>(
+      'PATCH',
+      `/products/${product.body.id}`,
+      { price: 125 },
+      registered.accessToken,
+    );
+    const disabledService = await http<Service>(
+      'PATCH',
+      `/services/${service.body.id}/status`,
+      { status: CatalogStatus.INACTIVE },
+      registered.accessToken,
+    );
+
+    expect(category.status).toBe(201);
+    expect(brand.status).toBe(201);
+    expect(unit.status).toBe(201);
+    expect(product.status).toBe(201);
+    expect(product.body.companyId).toBe(registered.company.id);
+    expect(Number(product.body.stock)).toBe(5);
+    expect(service.status).toBe(201);
+    expect(products.body.map(({ id }) => id)).toEqual([product.body.id]);
+    expect(services.body.map(({ id }) => id)).toEqual([service.body.id]);
+    expect(Number(updatedProduct.body.price)).toBe(125);
+    expect(disabledService.body.status).toBe(CatalogStatus.INACTIVE);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          companyId: registered.company.id,
+          action: {
+            in: [
+              'CATEGORY_CREATED',
+              'BRAND_CREATED',
+              'UNIT_CREATED',
+              'PRODUCT_CREATED',
+              'PRODUCT_UPDATED',
+              'SERVICE_CREATED',
+              'SERVICE_STATUS_CHANGED',
+            ],
+          },
+        },
+      }),
+    ).toBe(7);
+  });
+
+  it('validates catalog data, permissions and multi-company isolation', async () => {
+    const companyA = await registerCompany('catalog-a');
+    const companyB = await registerCompany('catalog-b');
+    const categoryA = await http<Category>(
+      'POST',
+      '/categories',
+      { name: 'Productos A', type: CategoryType.PRODUCT },
+      companyA.accessToken,
+    );
+    const categoryB = await http<Category>(
+      'POST',
+      '/categories',
+      { name: 'Productos B', type: CategoryType.PRODUCT },
+      companyB.accessToken,
+    );
+    const productA = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto A', categoryId: categoryA.body.id, price: 10 },
+      companyA.accessToken,
+    );
+    const productB = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto B', categoryId: categoryB.body.id, price: 20 },
+      companyB.accessToken,
+    );
+    const serviceA = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio A', price: 30 },
+      companyA.accessToken,
+    );
+    const serviceB = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio B', price: 40 },
+      companyB.accessToken,
+    );
+    const productsA = await http<Product[]>(
+      'GET',
+      '/products',
+      undefined,
+      companyA.accessToken,
+    );
+    const servicesA = await http<Service[]>(
+      'GET',
+      '/services',
+      undefined,
+      companyA.accessToken,
+    );
+    const crossProduct = await http<unknown>(
+      'GET',
+      `/products/${productB.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossServiceUpdate = await http<unknown>(
+      'PATCH',
+      `/services/${serviceB.body.id}`,
+      { price: 99 },
+      companyA.accessToken,
+    );
+    const negativeProduct = await http<unknown>(
+      'POST',
+      '/products',
+      { name: 'Inválido', price: -1 },
+      companyA.accessToken,
+    );
+    const namelessProduct = await http<unknown>(
+      'POST',
+      '/products',
+      { price: 10 },
+      companyA.accessToken,
+    );
+    const negativeService = await http<unknown>(
+      'POST',
+      '/services',
+      { name: 'Inválido', price: -1 },
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const cashier = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      companyA.branch.id,
+      'catalog-cashier',
+    );
+    const cashierLogin = await login(cashier.email);
+    const cashierCreate = await http<unknown>(
+      'POST',
+      '/products',
+      { name: 'No permitido', price: 10 },
+      cashierLogin.accessToken,
+    );
+    const cashierList = await http<Product[]>(
+      'GET',
+      '/products',
+      undefined,
+      cashierLogin.accessToken,
+    );
+
+    expect(productsA.body.map(({ id }) => id)).toEqual([productA.body.id]);
+    expect(servicesA.body.map(({ id }) => id)).toEqual([serviceA.body.id]);
+    expect(crossProduct.status).toBe(404);
+    expect(crossServiceUpdate.status).toBe(404);
+    expect(negativeProduct.status).toBe(400);
+    expect(namelessProduct.status).toBe(400);
+    expect(negativeService.status).toBe(400);
+    expect(cashierCreate.status).toBe(403);
+    expect(cashierList.status).toBe(200);
+    expect(
+      cashierList.body.every(
+        ({ companyId }) => companyId === companyA.company.id,
+      ),
+    ).toBe(true);
+  });
 });
 
 function configureTestEnvironment() {
@@ -656,6 +892,11 @@ async function resetDatabase() {
   await prisma.$transaction([
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
+    prisma.product.deleteMany(),
+    prisma.service.deleteMany(),
+    prisma.category.deleteMany(),
+    prisma.brand.deleteMany(),
+    prisma.unit.deleteMany(),
     prisma.user.deleteMany(),
     prisma.rolePermission.deleteMany(),
     prisma.role.deleteMany(),

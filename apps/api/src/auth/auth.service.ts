@@ -8,6 +8,7 @@ import { Prisma, UserStatus } from '@prisma/client';
 import { compare, hash } from 'bcrypt';
 
 import { AuditService } from '../audit/audit.service';
+import { DEFAULT_UNITS } from '../catalog/default-units';
 import type {
   AuthUser,
   RequestContext,
@@ -67,6 +68,12 @@ export class AuthService {
           },
         });
         await tx.businessSettings.create({ data: { companyId: company.id } });
+        await tx.unit.createMany({
+          data: DEFAULT_UNITS.map((unit) => ({
+            companyId: company.id,
+            ...unit,
+          })),
+        });
         const ownerRole = await this.rolesService.initializeCompanyRoles(
           tx,
           company.id,

@@ -74,6 +74,17 @@ enum DocumentType {
   FISCAL_INVOICE
 }
 
+enum CatalogStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CategoryType {
+  PRODUCT
+  SERVICE
+  BOTH
+}
+
 model Company {
   id           String            @id @default(cuid())
   name         String
@@ -90,6 +101,11 @@ model Company {
   roles        Role[]
   settings     BusinessSettings?
   auditLogs    AuditLog[]
+  categories   Category[]
+  brands       Brand[]
+  units        Unit[]
+  products     Product[]
+  services     Service[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   deletedAt    DateTime?
@@ -250,4 +266,115 @@ model AuditLog {
   @@index([companyId, createdAt])
   @@index([companyId, userId])
   @@map("audit_logs")
+}
+
+model Category {
+  id          String        @id @default(cuid())
+  companyId   String
+  name        String
+  type        CategoryType
+  description String?
+  status      CatalogStatus @default(ACTIVE)
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products    Product[]
+  services    Service[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([companyId, name])
+  @@index([companyId, status, name])
+  @@map("categories")
+}
+
+model Brand {
+  id          String        @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  status      CatalogStatus @default(ACTIVE)
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products    Product[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([companyId, name])
+  @@index([companyId, status, name])
+  @@map("brands")
+}
+
+model Unit {
+  id             String        @id @default(cuid())
+  companyId      String
+  name           String
+  code           String
+  allowsDecimals Boolean       @default(false)
+  status         CatalogStatus @default(ACTIVE)
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products       Product[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([companyId, code])
+  @@unique([companyId, name])
+  @@index([companyId, status, name])
+  @@map("units")
+}
+
+model Product {
+  id             String        @id @default(cuid())
+  companyId      String
+  categoryId     String?
+  brandId        String?
+  unitId         String?
+  name           String
+  description    String?
+  sku            String?
+  barcode        String?
+  cost           Decimal       @default(0) @db.Decimal(12, 2)
+  price          Decimal       @default(0) @db.Decimal(12, 2)
+  taxRate        Decimal       @default(18) @db.Decimal(5, 2)
+  stock          Decimal       @default(0) @db.Decimal(14, 3)
+  minStock       Decimal       @default(0) @db.Decimal(14, 3)
+  trackInventory Boolean       @default(true)
+  allowDiscount  Boolean       @default(true)
+  imageUrl       String?
+  status         CatalogStatus @default(ACTIVE)
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category       Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand          Brand?        @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  unit           Unit?         @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([companyId, sku])
+  @@unique([companyId, barcode])
+  @@index([companyId, status, name])
+  @@index([companyId, categoryId])
+  @@index([companyId, brandId])
+  @@map("products")
+}
+
+model Service {
+  id              String        @id @default(cuid())
+  companyId       String
+  categoryId      String?
+  name            String
+  description     String?
+  price           Decimal       @default(0) @db.Decimal(12, 2)
+  taxRate         Decimal       @default(18) @db.Decimal(5, 2)
+  durationMinutes Int?
+  allowDiscount   Boolean       @default(true)
+  status          CatalogStatus @default(ACTIVE)
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category        Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  @@index([companyId, status, name])
+  @@index([companyId, categoryId])
+  @@map("services")
 }
