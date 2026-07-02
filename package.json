@@ -12,6 +12,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
+    "test:e2e": "npm run test:e2e --workspace=apps/api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "npm run db:generate --workspace=packages/database",

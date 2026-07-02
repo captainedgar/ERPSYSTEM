@@ -117,7 +117,7 @@ export class SessionsService {
       ) as JwtSignOptions['expiresIn'],
     };
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwt.signAsync(claims, accessOptions),
+      this.jwt.signAsync({ ...claims, tokenId: randomUUID() }, accessOptions),
       this.jwt.signAsync(
         { ...claims, type: 'refresh', tokenId: randomUUID() },
         refreshOptions,
