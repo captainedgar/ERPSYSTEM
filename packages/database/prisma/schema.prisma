@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  CASHIER
+  SELLER
+  WAREHOUSE
+  ACCOUNTING
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+  INVITED
+}
+
+enum BusinessType {
+  SMALL_STORE
+  BEAUTY_SALON
+  BARBERSHOP
+  MINIMARKET
+  GROCERY
+  TIRE_SHOP
+  AUTO_PARTS
+  HARDWARE_STORE
+  CLOTHING_STORE
+  PHONE_STORE
+  COSMETICS_STORE
+  SERVICE_BUSINESS
+  OTHER
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PermissionAction {
+  VIEW
+  CREATE
+  UPDATE
+  DISABLE
+}
+
+model Company {
+  id           String            @id @default(cuid())
+  name         String
+  legalName    String?
+  rncOrCedula  String?           @unique
+  phone        String?
+  email        String?
+  address      String?
+  logoUrl      String?
+  businessType BusinessType
+  status       CompanyStatus     @default(ACTIVE)
+  branches     Branch[]
+  users        User[]
+  roles        Role[]
+  settings     BusinessSettings?
+  auditLogs    AuditLog[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+
+  @@map("companies")
+}
+
+model Branch {
+  id        String       @id @default(cuid())
+  companyId String
+  name      String
+  code      String
+  phone     String?
+  address   String?
+  isMain    Boolean      @default(false)
+  status    BranchStatus @default(ACTIVE)
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  users     User[]
+  auditLogs AuditLog[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("branches")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  companyId    String
+  branchId     String?
+  roleId       String
+  name         String
+  email        String        @unique
+  passwordHash String
+  phone        String?
+  status       UserStatus    @default(ACTIVE)
+  lastLoginAt  DateTime?
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch       Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  role         Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  sessions     UserSession[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  @@index([companyId, status])
+  @@index([companyId, branchId])
+  @@map("users")
+}
+
+model Role {
+  id              String           @id @default(cuid())
+  companyId       String
+  name            String
+  code            UserRole
+  description     String?
+  isSystem        Boolean          @default(true)
+  isActive        Boolean          @default(true)
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users           User[]
+  rolePermissions RolePermission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  module          String
+  action          PermissionAction
+  description     String?
+  rolePermissions RolePermission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserSession {
+  id               String    @id
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId, revokedAt])
+  @@map("user_sessions")
+}
+
+model BusinessSettings {
+  id                      String   @id @default(cuid())
+  companyId               String   @unique
+  currency                String   @default("DOP")
+  taxRate                 Decimal  @default(18) @db.Decimal(5, 2)
+  allowNegativeStock      Boolean  @default(false)
+  requireOpenCashForSales Boolean  @default(true)
+  receiptFooterText       String?
+  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("business_settings")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  branchId     String?
+  userId       String?
+  action       String
+  module       String
+  entityType   String?
+  entityId     String?
+  description  String
+  metadataJson Json?
+  ipAddress    String?
+  userAgent    String?
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch       Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([companyId, userId])
+  @@map("audit_logs")
+}
