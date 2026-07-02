@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@comercia/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -49,8 +50,16 @@ export default function DashboardPage() {
         </section>
 
         <section className="mt-6 rounded-3xl border border-dashed border-slate-700 p-8 text-slate-400">
-          La base segura del negocio está lista. Los módulos operativos se
-          incorporarán en las siguientes fases.
+          La base segura del negocio está lista. Configura ahora las
+          preferencias que usarán los módulos operativos futuros.
+          <div className="mt-5">
+            <Link
+              className="font-semibold text-emerald-400 hover:text-emerald-300"
+              href="/settings/business"
+            >
+              Configurar el negocio
+            </Link>
+          </div>
         </section>
       </div>
     </main>
