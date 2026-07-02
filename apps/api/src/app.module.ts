@@ -20,6 +20,7 @@ import { UsersModule } from './users/users.module';
   imports: [
     ConfigModule.forRoot({
       envFilePath: ['../../.env', '.env'],
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
       isGlobal: true,
     }),
     PrismaModule,
