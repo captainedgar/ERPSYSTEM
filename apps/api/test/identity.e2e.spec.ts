@@ -4,6 +4,7 @@ import {
   BusinessType,
   CatalogStatus,
   CategoryType,
+  InventoryMovementType,
   PaymentMethod,
   PrismaClient,
   UserRole,
@@ -845,6 +846,217 @@ describe('Identity and multi-company isolation (e2e)', () => {
       ),
     ).toBe(true);
   });
+
+  it('registers inventory movements, blocks negative stock by default and exposes low stock', async () => {
+    const registered = await registerCompany('inventory-core');
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Inventario base',
+        price: 25,
+        stock: 2,
+        minStock: 2,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+
+    const inventory = await http<{ items: Product[]; total: number }>(
+      'GET',
+      '/inventory',
+      undefined,
+      registered.accessToken,
+    );
+    const manualEntry = await http<{
+      product: Product;
+      movement: { type: InventoryMovementType };
+    }>(
+      'POST',
+      `/inventory/products/${product.body.id}/manual-entry`,
+      { quantity: 3, unitCost: 10, reason: 'Entrada inicial' },
+      registered.accessToken,
+    );
+    const adjustmentIn = await http<{
+      product: Product;
+      movement: { type: InventoryMovementType };
+    }>(
+      'POST',
+      `/inventory/products/${product.body.id}/adjust`,
+      {
+        type: InventoryMovementType.ADJUSTMENT_IN,
+        quantity: 1,
+        reason: 'Sobrante',
+      },
+      registered.accessToken,
+    );
+    const blockedAdjustment = await http<unknown>(
+      'POST',
+      `/inventory/products/${product.body.id}/adjust`,
+      {
+        type: InventoryMovementType.ADJUSTMENT_OUT,
+        quantity: 10,
+        reason: 'Intento invalido',
+      },
+      registered.accessToken,
+    );
+    const allowNegativeStock = await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { allowNegativeStock: true },
+      registered.accessToken,
+    );
+    const adjustmentOut = await http<{
+      product: Product;
+      movement: { type: InventoryMovementType };
+    }>(
+      'POST',
+      `/inventory/products/${product.body.id}/adjust`,
+      {
+        type: InventoryMovementType.ADJUSTMENT_OUT,
+        quantity: 10,
+        reason: 'Rotura masiva',
+      },
+      registered.accessToken,
+    );
+    const movements = await http<{
+      items: Array<{ type: InventoryMovementType }>;
+      total: number;
+      product: { id: string; name: string };
+    }>(
+      'GET',
+      `/inventory/products/${product.body.id}/movements`,
+      undefined,
+      registered.accessToken,
+    );
+    const lowStock = await http<{ items: Product[]; total: number }>(
+      'GET',
+      '/inventory/low-stock',
+      undefined,
+      registered.accessToken,
+    );
+
+    expect(inventory.status).toBe(200);
+    expect(inventory.body.total).toBe(1);
+    expect(inventory.body.items[0]?.id).toBe(product.body.id);
+    expect(manualEntry.status).toBe(201);
+    expect(Number(manualEntry.body.product.stock)).toBe(5);
+    expect(manualEntry.body.movement.type).toBe(
+      InventoryMovementType.MANUAL_ENTRY,
+    );
+    expect(adjustmentIn.status).toBe(201);
+    expect(Number(adjustmentIn.body.product.stock)).toBe(6);
+    expect(blockedAdjustment.status).toBe(400);
+    expect(allowNegativeStock.body.allowNegativeStock).toBe(true);
+    expect(adjustmentOut.status).toBe(201);
+    expect(Number(adjustmentOut.body.product.stock)).toBe(-4);
+    expect(movements.status).toBe(200);
+    expect(movements.body.total).toBe(3);
+    expect(movements.body.items.map(({ type }) => type)).toEqual([
+      InventoryMovementType.ADJUSTMENT_OUT,
+      InventoryMovementType.ADJUSTMENT_IN,
+      InventoryMovementType.MANUAL_ENTRY,
+    ]);
+    expect(lowStock.status).toBe(200);
+    expect(lowStock.body.items.map(({ id }) => id)).toEqual([product.body.id]);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          companyId: registered.company.id,
+          action: {
+            in: [
+              'INVENTORY_MANUAL_ENTRY',
+              'INVENTORY_ADJUSTMENT_IN',
+              'INVENTORY_ADJUSTMENT_OUT',
+              'INVENTORY_NEGATIVE_STOCK_BLOCKED',
+            ],
+          },
+        },
+      }),
+    ).toBe(4);
+  });
+
+  it('enforces inventory permissions and multi-company isolation', async () => {
+    const companyA = await registerCompany('inventory-a');
+    const companyB = await registerCompany('inventory-b');
+    const productA = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto A', price: 20, stock: 4, minStock: 1 },
+      companyA.accessToken,
+    );
+    const productB = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto B', price: 30, stock: 5, minStock: 1 },
+      companyB.accessToken,
+    );
+    const anonymous = await http<unknown>('GET', '/inventory');
+    const roles = await getRoles(companyA.accessToken);
+    const warehouse = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.WAREHOUSE).id,
+      companyA.branch.id,
+      'inventory-warehouse',
+    );
+    const cashier = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      companyA.branch.id,
+      'inventory-cashier',
+    );
+    const warehouseLogin = await login(warehouse.email);
+    const cashierLogin = await login(cashier.email);
+    const warehouseAdjustment = await http<{ product: Product }>(
+      'POST',
+      `/inventory/products/${productA.body.id}/adjust`,
+      {
+        type: InventoryMovementType.ADJUSTMENT_OUT,
+        quantity: 1,
+        reason: 'Conteo fisico',
+      },
+      warehouseLogin.accessToken,
+    );
+    const cashierAdjustment = await http<unknown>(
+      'POST',
+      `/inventory/products/${productA.body.id}/adjust`,
+      {
+        type: InventoryMovementType.ADJUSTMENT_OUT,
+        quantity: 1,
+        reason: 'No permitido',
+      },
+      cashierLogin.accessToken,
+    );
+    const inventoryA = await http<{ items: Product[]; total: number }>(
+      'GET',
+      '/inventory',
+      undefined,
+      companyA.accessToken,
+    );
+    const crossCompanyMovements = await http<unknown>(
+      'GET',
+      `/inventory/products/${productB.body.id}/movements`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossCompanyManualEntry = await http<unknown>(
+      'POST',
+      `/inventory/products/${productB.body.id}/manual-entry`,
+      { quantity: 1, reason: 'Cruce' },
+      companyA.accessToken,
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(warehouseAdjustment.status).toBe(201);
+    expect(Number(warehouseAdjustment.body.product.stock)).toBe(3);
+    expect(cashierAdjustment.status).toBe(403);
+    expect(inventoryA.status).toBe(200);
+    expect(inventoryA.body.items.map(({ id }) => id)).toEqual([
+      productA.body.id,
+    ]);
+    expect(crossCompanyMovements.status).toBe(404);
+    expect(crossCompanyManualEntry.status).toBe(404);
+  });
 });
 
 function configureTestEnvironment() {
@@ -892,6 +1104,7 @@ async function resetDatabase() {
   await prisma.$transaction([
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
+    prisma.inventoryMovement.deleteMany(),
     prisma.product.deleteMany(),
     prisma.service.deleteMany(),
     prisma.category.deleteMany(),

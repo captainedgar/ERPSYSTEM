@@ -66,6 +66,13 @@ export default function DashboardPage() {
             >
               Administrar catálogo
             </Link>
+            <span className="mx-3 text-slate-700">·</span>
+            <Link
+              className="font-semibold text-emerald-400 hover:text-emerald-300"
+              href="/inventory"
+            >
+              Ver inventario
+            </Link>
           </div>
         </section>
       </div>

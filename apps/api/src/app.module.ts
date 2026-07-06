@@ -14,6 +14,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { HealthController } from './health.controller';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { ProductsModule } from './products/products.module';
 import { RolesModule } from './roles/roles.module';
 import { ServicesModule } from './services/services.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     PermissionsModule,
     RolesModule,
     AuthModule,
+    InventoryModule,
     CompaniesModule,
     BranchesModule,
     UsersModule,

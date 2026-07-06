@@ -101,6 +101,16 @@ export enum CategoryType {
   BOTH = 'BOTH',
 }
 
+export enum InventoryMovementType {
+  MANUAL_ENTRY = 'MANUAL_ENTRY',
+  ADJUSTMENT_IN = 'ADJUSTMENT_IN',
+  ADJUSTMENT_OUT = 'ADJUSTMENT_OUT',
+  RETURN_IN = 'RETURN_IN',
+  VOID_SALE_IN = 'VOID_SALE_IN',
+  SALE_OUT = 'SALE_OUT',
+  PURCHASE_IN = 'PURCHASE_IN',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

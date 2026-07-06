@@ -230,7 +230,26 @@ export function CatalogManager({ kind }: { kind: CatalogKind }) {
     }
   }
 
-  if (authLoading || loading || !user) {
+  if (authLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center">Cargando…</main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="grid min-h-screen place-items-center px-5 text-center">
+        <div>
+          <p className="text-lg font-medium">Necesitas iniciar sesión.</p>
+          <p className="mt-2 text-sm text-slate-400">
+            Redirigiendo al acceso del sistema…
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
     return (
       <main className="grid min-h-screen place-items-center">Cargando…</main>
     );
@@ -410,6 +429,19 @@ export function CatalogManager({ kind }: { kind: CatalogKind }) {
               </Button>
             </form>
             <div className="mt-5 grid gap-3">
+              {error && !items.length && (
+                <div className="rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200">
+                  <p>{error}</p>
+                  <Button
+                    className="mt-3"
+                    onClick={() => void loadAll(search)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Reintentar
+                  </Button>
+                </div>
+              )}
               {!items.length && (
                 <p className="py-8 text-center text-slate-500">
                   Aún no hay registros.

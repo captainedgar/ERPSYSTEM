@@ -12,6 +12,7 @@ import {
 import {
   apiRequest,
   clearTokens,
+  getStoredAccessToken,
   storeTokens,
   type AuthTokens,
 } from '@/lib/api';
@@ -36,12 +37,17 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(getStoredAccessToken()));
 
   useEffect(() => {
+    if (!getStoredAccessToken()) return;
+
     void apiRequest<AuthUser>('/auth/me')
       .then(setUser)
-      .catch(() => setUser(null))
+      .catch(() => {
+        clearTokens();
+        setUser(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
