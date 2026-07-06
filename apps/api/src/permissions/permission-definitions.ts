@@ -37,4 +37,8 @@ export const PERMISSIONS = [
   ['inventory.adjust', 'inventory', PermissionAction.UPDATE],
   ['inventory.view_movements', 'inventory', PermissionAction.VIEW],
   ['inventory.view_low_stock', 'inventory', PermissionAction.VIEW],
+  ['customers.view', 'customers', PermissionAction.VIEW],
+  ['customers.create', 'customers', PermissionAction.CREATE],
+  ['customers.update', 'customers', PermissionAction.UPDATE],
+  ['customers.change_status', 'customers', PermissionAction.DISABLE],
 ] as const;

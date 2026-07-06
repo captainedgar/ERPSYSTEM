@@ -11,6 +11,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { CompaniesModule } from './companies/companies.module';
+import { CustomersModule } from './customers/customers.module';
 import { HealthController } from './health.controller';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     InventoryModule,
     CompaniesModule,
+    CustomersModule,
     BranchesModule,
     UsersModule,
     BusinessSettingsModule,

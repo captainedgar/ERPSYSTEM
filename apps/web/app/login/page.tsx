@@ -3,7 +3,7 @@
 import { Button } from '@comercia/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth, type AuthUser } from '@/components/auth-provider';
 import { apiRequest, type AuthTokens } from '@/lib/api';
@@ -14,9 +14,16 @@ interface LoginResponse extends AuthTokens {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setSession } = useAuth();
+  const { clearSessionMessage, sessionMessage, setSession } = useAuth();
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(
+    () => () => {
+      clearSessionMessage();
+    },
+    [clearSessionMessage],
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +64,14 @@ export default function LoginPage() {
         <p className="mt-2 text-slate-400">
           Accede a la administración de tu negocio.
         </p>
+        {sessionMessage && (
+          <p
+            className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200"
+            role="alert"
+          >
+            {sessionMessage}
+          </p>
+        )}
         <div className="mt-8 grid gap-5">
           <label>
             Correo electrónico

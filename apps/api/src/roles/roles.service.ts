@@ -22,6 +22,8 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'services.view',
     'inventory.view',
     'inventory.view_low_stock',
+    'customers.view',
+    'customers.create',
   ],
   SELLER: [
     'branches.view',
@@ -32,6 +34,8 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'services.view',
     'inventory.view',
     'inventory.view_low_stock',
+    'customers.view',
+    'customers.create',
   ],
   WAREHOUSE: [
     'branches.view',
@@ -60,6 +64,8 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'inventory.view',
     'inventory.view_movements',
     'inventory.view_low_stock',
+    'customers.view',
+    'customers.update',
   ],
 };
 

@@ -4,13 +4,18 @@ import {
   BusinessType,
   CatalogStatus,
   CategoryType,
+  CustomerDocumentType,
+  CustomerStatus,
+  CustomerType,
   InventoryMovementType,
   PaymentMethod,
   PrismaClient,
+  TaxpayerType,
   UserRole,
   type Branch,
   type BusinessSettings,
   type Category,
+  type Customer,
   type Product,
   type Service,
   type Unit,
@@ -617,6 +622,333 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ]);
   });
 
+  it('creates, searches, updates and changes customer status with validation and audit', async () => {
+    const registered = await registerCompany('customers-owner');
+    const anonymous = await http<unknown>('GET', '/customers');
+    const created = await http<Customer>(
+      'POST',
+      '/customers',
+      {
+        type: CustomerType.BUSINESS,
+        name: 'Ferretería Central',
+        commercialName: 'La Central',
+        documentType: CustomerDocumentType.RNC,
+        documentNumber: '1-01-12345-6',
+        email: 'ventas@central.test',
+        phone: '809-555-0101',
+        mobile: '829-555-0102',
+        address: 'Avenida Principal 10',
+        city: 'Santo Domingo',
+        province: 'Distrito Nacional',
+        country: 'República Dominicana',
+        taxpayerType: TaxpayerType.FISCAL_CONSUMER,
+        paymentTermsDays: 30,
+        creditLimit: 25000,
+        notes: 'Cliente fiscal',
+      },
+      registered.accessToken,
+    );
+    const byName = await http<{
+      items: Customer[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
+      'GET',
+      '/customers?search=Ferreter%C3%ADa',
+      undefined,
+      registered.accessToken,
+    );
+    const byDocument = await http<{ items: Customer[] }>(
+      'GET',
+      '/customers?search=101123456',
+      undefined,
+      registered.accessToken,
+    );
+    const byEmail = await http<{ items: Customer[] }>(
+      'GET',
+      '/customers?search=ventas%40central.test',
+      undefined,
+      registered.accessToken,
+    );
+    const updated = await http<Customer>(
+      'PATCH',
+      `/customers/${created.body.id}`,
+      {
+        name: 'Ferretería Central SRL',
+        paymentTermsDays: 45,
+        creditLimit: 30000,
+      },
+      registered.accessToken,
+    );
+    const inactive = await http<Customer>(
+      'PATCH',
+      `/customers/${created.body.id}/status`,
+      { status: CustomerStatus.INACTIVE },
+      registered.accessToken,
+    );
+    const duplicate = await http<unknown>(
+      'POST',
+      '/customers',
+      {
+        type: CustomerType.BUSINESS,
+        name: 'Documento repetido',
+        documentType: CustomerDocumentType.RNC,
+        documentNumber: '101123456',
+        taxpayerType: TaxpayerType.FISCAL_CONSUMER,
+      },
+      registered.accessToken,
+    );
+    const invalidEmail = await http<unknown>(
+      'POST',
+      '/customers',
+      {
+        type: CustomerType.INDIVIDUAL,
+        name: 'Email inválido',
+        documentType: CustomerDocumentType.NONE,
+        email: 'correo-invalido',
+        taxpayerType: TaxpayerType.FINAL_CONSUMER,
+      },
+      registered.accessToken,
+    );
+    const negativeCredit = await http<unknown>(
+      'POST',
+      '/customers',
+      {
+        type: CustomerType.INDIVIDUAL,
+        name: 'Crédito inválido',
+        documentType: CustomerDocumentType.NONE,
+        taxpayerType: TaxpayerType.FINAL_CONSUMER,
+        creditLimit: -1,
+      },
+      registered.accessToken,
+    );
+    const negativeTerms = await http<unknown>(
+      'POST',
+      '/customers',
+      {
+        type: CustomerType.INDIVIDUAL,
+        name: 'Plazo inválido',
+        documentType: CustomerDocumentType.NONE,
+        taxpayerType: TaxpayerType.FINAL_CONSUMER,
+        paymentTermsDays: -1,
+      },
+      registered.accessToken,
+    );
+    const blankName = await http<unknown>(
+      'POST',
+      '/customers',
+      {
+        ...basicCustomerPayload('   '),
+      },
+      registered.accessToken,
+    );
+    const auditLogs = await prisma.auditLog.findMany({
+      where: {
+        companyId: registered.company.id,
+        entityId: created.body.id,
+        action: {
+          in: [
+            'CUSTOMER_CREATED',
+            'CUSTOMER_UPDATED',
+            'CUSTOMER_STATUS_CHANGED',
+          ],
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    expect(anonymous.status).toBe(401);
+    expect(created.status).toBe(201);
+    expect(created.body.companyId).toBe(registered.company.id);
+    expect(created.body.documentNumber).toBe('101123456');
+    expect(Number(created.body.creditLimit)).toBe(25000);
+    expect(byName.body.items.map(({ id }) => id)).toEqual([created.body.id]);
+    expect(byDocument.body.items.map(({ id }) => id)).toEqual([
+      created.body.id,
+    ]);
+    expect(byEmail.body.items.map(({ id }) => id)).toEqual([created.body.id]);
+    expect(updated.body.name).toBe('Ferretería Central SRL');
+    expect(updated.body.paymentTermsDays).toBe(45);
+    expect(Number(updated.body.creditLimit)).toBe(30000);
+    expect(inactive.body.status).toBe(CustomerStatus.INACTIVE);
+    expect(duplicate.status).toBe(409);
+    expect(invalidEmail.status).toBe(400);
+    expect(negativeCredit.status).toBe(400);
+    expect(negativeTerms.status).toBe(400);
+    expect(blankName.status).toBe(400);
+    expect(auditLogs.map(({ action }) => action)).toEqual([
+      'CUSTOMER_CREATED',
+      'CUSTOMER_UPDATED',
+      'CUSTOMER_STATUS_CHANGED',
+    ]);
+    expect(
+      auditLogs.every(
+        ({ companyId, userId }) =>
+          companyId === registered.company.id && userId === registered.user.id,
+      ),
+    ).toBe(true);
+    expect(auditLogs[1]?.metadataJson).toMatchObject({
+      changedFields: ['name', 'paymentTermsDays', 'creditLimit'],
+    });
+  });
+
+  it('enforces customer permissions for operational roles', async () => {
+    const registered = await registerCompany('customers-roles');
+    const roles = await getRoles(registered.accessToken);
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'customers-cashier',
+    );
+    const seller = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.SELLER).id,
+      registered.branch.id,
+      'customers-seller',
+    );
+    const accounting = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.ACCOUNTING).id,
+      registered.branch.id,
+      'customers-accounting',
+    );
+    const warehouse = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.WAREHOUSE).id,
+      registered.branch.id,
+      'customers-warehouse',
+    );
+    const [cashierSession, sellerSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(seller.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const cashierCreate = await http<Customer>(
+      'POST',
+      '/customers',
+      basicCustomerPayload('Cliente cajero'),
+      cashierSession.accessToken,
+    );
+    const sellerCreate = await http<Customer>(
+      'POST',
+      '/customers',
+      basicCustomerPayload('Cliente vendedor'),
+      sellerSession.accessToken,
+    );
+    const accountingList = await http<{ items: Customer[]; total: number }>(
+      'GET',
+      '/customers',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingUpdate = await http<Customer>(
+      'PATCH',
+      `/customers/${cashierCreate.body.id}`,
+      { taxpayerType: TaxpayerType.FISCAL_CONSUMER },
+      accountingSession.accessToken,
+    );
+    const cashierUpdate = await http<unknown>(
+      'PATCH',
+      `/customers/${cashierCreate.body.id}`,
+      { name: 'Cambio no permitido' },
+      cashierSession.accessToken,
+    );
+    const sellerStatus = await http<unknown>(
+      'PATCH',
+      `/customers/${sellerCreate.body.id}/status`,
+      { status: CustomerStatus.INACTIVE },
+      sellerSession.accessToken,
+    );
+    const accountingStatus = await http<unknown>(
+      'PATCH',
+      `/customers/${cashierCreate.body.id}/status`,
+      { status: CustomerStatus.INACTIVE },
+      accountingSession.accessToken,
+    );
+    const warehouseList = await http<unknown>(
+      'GET',
+      '/customers',
+      undefined,
+      warehouseSession.accessToken,
+    );
+
+    expect(cashierCreate.status).toBe(201);
+    expect(sellerCreate.status).toBe(201);
+    expect(accountingList.status).toBe(200);
+    expect(accountingList.body.total).toBe(2);
+    expect(accountingUpdate.status).toBe(200);
+    expect(accountingUpdate.body.taxpayerType).toBe(
+      TaxpayerType.FISCAL_CONSUMER,
+    );
+    expect(cashierUpdate.status).toBe(403);
+    expect(sellerStatus.status).toBe(403);
+    expect(accountingStatus.status).toBe(403);
+    expect(warehouseList.status).toBe(403);
+  });
+
+  it('isolates customers by company while allowing equal documents across companies', async () => {
+    const companyA = await registerCompany('customers-a');
+    const companyB = await registerCompany('customers-b');
+    const sharedDocument = '001-1234567-8';
+    const customerA = await http<Customer>(
+      'POST',
+      '/customers',
+      {
+        ...basicCustomerPayload('Cliente empresa A'),
+        documentType: CustomerDocumentType.CEDULA,
+        documentNumber: sharedDocument,
+      },
+      companyA.accessToken,
+    );
+    const customerB = await http<Customer>(
+      'POST',
+      '/customers',
+      {
+        ...basicCustomerPayload('Cliente empresa B'),
+        documentType: CustomerDocumentType.CEDULA,
+        documentNumber: sharedDocument,
+      },
+      companyB.accessToken,
+    );
+    const customersA = await http<{ items: Customer[]; total: number }>(
+      'GET',
+      '/customers',
+      undefined,
+      companyA.accessToken,
+    );
+    const crossRead = await http<unknown>(
+      'GET',
+      `/customers/${customerB.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossUpdate = await http<unknown>(
+      'PATCH',
+      `/customers/${customerB.body.id}`,
+      { name: 'Cruce bloqueado' },
+      companyA.accessToken,
+    );
+
+    expect(customerA.status).toBe(201);
+    expect(customerB.status).toBe(201);
+    expect(customerA.body.documentNumber).toBe(customerB.body.documentNumber);
+    expect(customersA.body.total).toBe(1);
+    expect(customersA.body.items.map(({ id }) => id)).toEqual([
+      customerA.body.id,
+    ]);
+    expect(crossRead.status).toBe(404);
+    expect(crossUpdate.status).toBe(404);
+    expect(
+      await prisma.customer.count({
+        where: { documentNumber: customerA.body.documentNumber },
+      }),
+    ).toBe(2);
+  });
+
   it('creates and manages categories, brands, units, products and services', async () => {
     const registered = await registerCompany('catalog-crud');
     const category = await http<Category>(
@@ -1105,6 +1437,7 @@ async function resetDatabase() {
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
+    prisma.customer.deleteMany(),
     prisma.product.deleteMany(),
     prisma.service.deleteMany(),
     prisma.category.deleteMany(),
@@ -1118,6 +1451,15 @@ async function resetDatabase() {
     prisma.branch.deleteMany(),
     prisma.company.deleteMany(),
   ]);
+}
+
+function basicCustomerPayload(name: string) {
+  return {
+    type: CustomerType.INDIVIDUAL,
+    name,
+    documentType: CustomerDocumentType.NONE,
+    taxpayerType: TaxpayerType.FINAL_CONSUMER,
+  };
 }
 
 async function registerCompany(label: string) {

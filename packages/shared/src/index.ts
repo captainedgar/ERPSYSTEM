@@ -111,6 +111,31 @@ export enum InventoryMovementType {
   PURCHASE_IN = 'PURCHASE_IN',
 }
 
+export enum CustomerType {
+  INDIVIDUAL = 'INDIVIDUAL',
+  BUSINESS = 'BUSINESS',
+}
+
+export enum CustomerDocumentType {
+  CEDULA = 'CEDULA',
+  RNC = 'RNC',
+  PASSPORT = 'PASSPORT',
+  NONE = 'NONE',
+}
+
+export enum CustomerStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum TaxpayerType {
+  FINAL_CONSUMER = 'FINAL_CONSUMER',
+  FISCAL_CONSUMER = 'FISCAL_CONSUMER',
+  GOVERNMENT = 'GOVERNMENT',
+  SPECIAL_REGIME = 'SPECIAL_REGIME',
+  NONE = 'NONE',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

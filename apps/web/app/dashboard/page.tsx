@@ -73,6 +73,17 @@ export default function DashboardPage() {
             >
               Ver inventario
             </Link>
+            {user.role.code !== 'WAREHOUSE' && (
+              <>
+                <span className="mx-3 text-slate-700">·</span>
+                <Link
+                  className="font-semibold text-emerald-400 hover:text-emerald-300"
+                  href="/customers"
+                >
+                  Administrar clientes
+                </Link>
+              </>
+            )}
           </div>
         </section>
       </div>

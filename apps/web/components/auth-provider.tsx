@@ -2,17 +2,21 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 
 import {
   apiRequest,
   clearTokens,
   getStoredAccessToken,
+  SESSION_EXPIRED_EVENT,
+  SESSION_EXPIRED_MESSAGE,
   storeTokens,
   type AuthTokens,
 } from '@/lib/api';
@@ -29,6 +33,8 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
+  sessionMessage: string | null;
+  clearSessionMessage: () => void;
   setSession: (user: AuthUser, tokens: AuthTokens) => void;
   logout: () => Promise<void>;
 }
@@ -36,8 +42,24 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(() => Boolean(getStoredAccessToken()));
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const clearSessionMessage = useCallback(() => setSessionMessage(null), []);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      setLoading(false);
+      setSessionMessage(SESSION_EXPIRED_MESSAGE);
+      router.replace('/login');
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () =>
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, [router]);
 
   useEffect(() => {
     if (!getStoredAccessToken()) return;
@@ -55,10 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       loading,
+      sessionMessage,
+      clearSessionMessage,
       setSession: (nextUser, tokens) => {
         storeTokens(tokens);
         setUser(nextUser);
         setLoading(false);
+        setSessionMessage(null);
       },
       logout: async () => {
         try {
@@ -66,10 +91,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
           clearTokens();
           setUser(null);
+          setLoading(false);
+          setSessionMessage(null);
         }
       },
     }),
-    [loading, user],
+    [clearSessionMessage, loading, sessionMessage, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

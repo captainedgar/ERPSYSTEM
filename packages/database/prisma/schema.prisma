@@ -95,6 +95,31 @@ enum InventoryMovementType {
   PURCHASE_IN
 }
 
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum CustomerDocumentType {
+  CEDULA
+  RNC
+  PASSPORT
+  NONE
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TaxpayerType {
+  FINAL_CONSUMER
+  FISCAL_CONSUMER
+  GOVERNMENT
+  SPECIAL_REGIME
+  NONE
+}
+
 model Company {
   id                 String              @id @default(cuid())
   name               String
@@ -116,6 +141,7 @@ model Company {
   units              Unit[]
   products           Product[]
   services           Service[]
+  customers          Customer[]
   inventoryMovements InventoryMovement[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
@@ -391,6 +417,37 @@ model Service {
   @@index([companyId, status, name])
   @@index([companyId, categoryId])
   @@map("services")
+}
+
+model Customer {
+  id               String               @id @default(cuid())
+  companyId        String
+  type             CustomerType
+  name             String
+  commercialName   String?
+  documentType     CustomerDocumentType
+  documentNumber   String?
+  email            String?
+  phone            String?
+  mobile           String?
+  address          String?
+  city             String?
+  province         String?
+  country          String?
+  taxpayerType     TaxpayerType
+  paymentTermsDays Int                  @default(0)
+  creditLimit      Decimal              @default(0) @db.Decimal(12, 2)
+  notes            String?
+  status           CustomerStatus       @default(ACTIVE)
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+
+  @@unique([companyId, documentNumber])
+  @@index([companyId, status, name])
+  @@index([companyId, type, name])
+  @@map("customers")
 }
 
 model InventoryMovement {

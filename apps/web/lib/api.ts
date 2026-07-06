@@ -21,6 +21,9 @@ export class ApiError extends Error {
 
 const ACCESS_KEY = 'comercia.accessToken';
 const REFRESH_KEY = 'comercia.refreshToken';
+export const SESSION_EXPIRED_EVENT = 'comercia:session-expired';
+export const SESSION_EXPIRED_MESSAGE =
+  'Tu sesi\u00f3n expir\u00f3. Inicia sesi\u00f3n nuevamente.';
 let refreshRequest: Promise<string | null> | null = null;
 
 export function storeTokens(tokens: AuthTokens) {
@@ -31,6 +34,11 @@ export function storeTokens(tokens: AuthTokens) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+}
+
+function expireSession() {
+  clearTokens();
+  window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
 }
 
 export function getStoredAccessToken() {
@@ -76,7 +84,8 @@ export async function apiRequest<T>(
   if (response.status === 401 && retry && typeof window !== 'undefined') {
     const renewed = await refreshAccessToken();
     if (renewed) return apiRequest<T>(path, init, false);
-    clearTokens();
+    expireSession();
+    throw new ApiError(SESSION_EXPIRED_MESSAGE, 401);
   }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
@@ -101,18 +110,24 @@ async function refreshAccessToken() {
   refreshRequest = (async () => {
     const refreshToken = localStorage.getItem(REFRESH_KEY);
     if (!refreshToken) return null;
-    const response = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!response.ok) {
-      clearTokens();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return null;
+      const tokens = (await response.json()) as AuthTokens;
+      storeTokens(tokens);
+      return tokens.accessToken;
+    } catch {
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
-    const tokens = (await response.json()) as AuthTokens;
-    storeTokens(tokens);
-    return tokens.accessToken;
   })();
   try {
     return await refreshRequest;
