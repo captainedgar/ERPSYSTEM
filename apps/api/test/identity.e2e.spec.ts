@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
+import { PosItemType, PosSearchType } from '../src/pos/pos.types';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 interface SafeUser {
@@ -949,6 +950,402 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ).toBe(2);
   });
 
+  it('searches active POS items by type and identifier with company isolation', async () => {
+    const companyA = await registerCompany('pos-search-a');
+    const companyB = await registerCompany('pos-search-b');
+    const category = await http<Category>(
+      'POST',
+      '/categories',
+      { name: 'Herramientas eléctricas', type: CategoryType.BOTH },
+      companyA.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Taladro profesional',
+        description: 'Taladro de impacto',
+        categoryId: category.body.id,
+        sku: 'POS-SKU-001',
+        barcode: '7461234567890',
+        price: 100,
+        stock: 4,
+      },
+      companyA.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      {
+        name: 'Instalación profesional',
+        description: 'Instalación de herramientas',
+        categoryId: category.body.id,
+        price: 50,
+      },
+      companyA.accessToken,
+    );
+    const inactiveProduct = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto POS inactivo', price: 5 },
+      companyA.accessToken,
+    );
+    const inactiveService = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio POS inactivo', price: 5 },
+      companyA.accessToken,
+    );
+    const foreignProduct = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto empresa B', price: 10 },
+      companyB.accessToken,
+    );
+    await http<Product>(
+      'PATCH',
+      `/products/${inactiveProduct.body.id}/status`,
+      { status: CatalogStatus.INACTIVE },
+      companyA.accessToken,
+    );
+    await http<Service>(
+      'PATCH',
+      `/services/${inactiveService.body.id}/status`,
+      { status: CatalogStatus.INACTIVE },
+      companyA.accessToken,
+    );
+
+    const anonymous = await http<unknown>('GET', '/pos/search-items');
+    const all = await http<{
+      items: Array<{ id: string; type: PosItemType; stock: string | null }>;
+      total: number;
+    }>(
+      'GET',
+      `/pos/search-items?type=${PosSearchType.ALL}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const bySku = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/pos/search-items?search=POS-SKU-001&type=PRODUCT',
+      undefined,
+      companyA.accessToken,
+    );
+    const byBarcode = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/pos/search-items?search=7461234567890',
+      undefined,
+      companyA.accessToken,
+    );
+    const services = await http<{
+      items: Array<{ id: string; type: PosItemType; stock: null }>;
+    }>(
+      'GET',
+      '/pos/search-items?search=Instalaci%C3%B3n&type=SERVICE',
+      undefined,
+      companyA.accessToken,
+    );
+    const byCategory = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/pos/search-items?search=Herramientas',
+      undefined,
+      companyA.accessToken,
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(all.status).toBe(200);
+    expect(all.body.total).toBe(2);
+    expect(all.body.items.map(({ id }) => id).sort()).toEqual(
+      [product.body.id, service.body.id].sort(),
+    );
+    expect(all.body.items.map(({ id }) => id)).not.toContain(
+      foreignProduct.body.id,
+    );
+    expect(all.body.items.map(({ id }) => id)).not.toContain(
+      inactiveProduct.body.id,
+    );
+    expect(all.body.items.map(({ id }) => id)).not.toContain(
+      inactiveService.body.id,
+    );
+    expect(bySku.body.items.map(({ id }) => id)).toEqual([product.body.id]);
+    expect(byBarcode.body.items.map(({ id }) => id)).toEqual([product.body.id]);
+    expect(services.body.items).toEqual([
+      expect.objectContaining({
+        id: service.body.id,
+        type: PosItemType.SERVICE,
+        stock: null,
+      }),
+    ]);
+    expect(byCategory.body.items.map(({ id }) => id).sort()).toEqual(
+      [product.body.id, service.body.id].sort(),
+    );
+  });
+
+  it('validates a POS cart, calculates totals and never changes inventory', async () => {
+    const registered = await registerCompany('pos-valid');
+    const customer = await http<Customer>(
+      'POST',
+      '/customers',
+      basicCustomerPayload('Cliente POS'),
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto carrito',
+        price: 100,
+        taxRate: 18,
+        stock: 5,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio carrito', price: 50, taxRate: 18 },
+      registered.accessToken,
+    );
+    const movementCountBefore = await prisma.inventoryMovement.count({
+      where: { companyId: registered.company.id },
+    });
+    const validation = await http<{
+      valid: boolean;
+      errors: unknown[];
+      customer: { id: string };
+      items: Array<{
+        itemId: string;
+        lineSubtotal: number;
+        discountAmount: number;
+        taxAmount: number;
+        lineTotal: number;
+      }>;
+      subtotal: number;
+      discountTotal: number;
+      taxTotal: number;
+      total: number;
+    }>(
+      'POST',
+      '/pos/validate-cart',
+      {
+        customerId: customer.body.id,
+        items: [
+          {
+            itemType: PosItemType.PRODUCT,
+            itemId: product.body.id,
+            quantity: 2,
+            discountAmount: 20,
+          },
+          {
+            itemType: PosItemType.SERVICE,
+            itemId: service.body.id,
+            quantity: 1,
+            discountAmount: 0,
+          },
+        ],
+      },
+      registered.accessToken,
+    );
+    const storedProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+    const movementCountAfter = await prisma.inventoryMovement.count({
+      where: { companyId: registered.company.id },
+    });
+
+    expect(validation.status).toBe(201);
+    expect(validation.body.valid).toBe(true);
+    expect(validation.body.errors).toEqual([]);
+    expect(validation.body.customer.id).toBe(customer.body.id);
+    expect(validation.body.subtotal).toBe(250);
+    expect(validation.body.discountTotal).toBe(20);
+    expect(validation.body.taxTotal).toBe(41.4);
+    expect(validation.body.total).toBe(271.4);
+    expect(validation.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          itemId: product.body.id,
+          lineSubtotal: 200,
+          discountAmount: 20,
+          taxAmount: 32.4,
+          lineTotal: 212.4,
+        }),
+        expect.objectContaining({
+          itemId: service.body.id,
+          lineSubtotal: 50,
+          taxAmount: 9,
+          lineTotal: 59,
+        }),
+      ]),
+    );
+    expect(Number(storedProduct.stock)).toBe(5);
+    expect(movementCountAfter).toBe(movementCountBefore);
+  });
+
+  it('rejects invalid POS carts, enforces stock settings and role permissions', async () => {
+    const registered = await registerCompany('pos-rules');
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto limitado',
+        price: 10,
+        stock: 1,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio validación', price: 20 },
+      registered.accessToken,
+    );
+    const invalid = await http<{
+      valid: boolean;
+      errors: Array<{ code: string }>;
+    }>(
+      'POST',
+      '/pos/validate-cart',
+      {
+        items: [
+          {
+            itemType: PosItemType.PRODUCT,
+            itemId: 'missing-product-id',
+            quantity: 1,
+            discountAmount: 0,
+          },
+          {
+            itemType: PosItemType.SERVICE,
+            itemId: 'missing-service-id',
+            quantity: 1,
+            discountAmount: 0,
+          },
+          {
+            itemType: PosItemType.PRODUCT,
+            itemId: product.body.id,
+            quantity: 0,
+            discountAmount: 0,
+          },
+          {
+            itemType: PosItemType.SERVICE,
+            itemId: service.body.id,
+            quantity: 1,
+            discountAmount: -1,
+          },
+          {
+            itemType: PosItemType.SERVICE,
+            itemId: service.body.id,
+            quantity: 1,
+            discountAmount: 21,
+          },
+        ],
+      },
+      registered.accessToken,
+    );
+    const insufficientStock = await validateProductCart(
+      registered.accessToken,
+      product.body.id,
+      2,
+    );
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { allowNegativeStock: true },
+      registered.accessToken,
+    );
+    const allowedStock = await validateProductCart(
+      registered.accessToken,
+      product.body.id,
+      2,
+    );
+
+    const roles = await getRoles(registered.accessToken);
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'pos-cashier',
+    );
+    const seller = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.SELLER).id,
+      registered.branch.id,
+      'pos-seller',
+    );
+    const warehouse = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.WAREHOUSE).id,
+      registered.branch.id,
+      'pos-warehouse',
+    );
+    const [cashierSession, sellerSession, warehouseSession] = await Promise.all(
+      [login(cashier.email), login(seller.email), login(warehouse.email)],
+    );
+    const cashierSearch = await http<unknown>(
+      'GET',
+      '/pos/search-items',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const cashierValidation = await validateProductCart(
+      cashierSession.accessToken,
+      product.body.id,
+      1,
+    );
+    const sellerSearch = await http<unknown>(
+      'GET',
+      '/pos/search-items',
+      undefined,
+      sellerSession.accessToken,
+    );
+    const sellerValidation = await validateProductCart(
+      sellerSession.accessToken,
+      product.body.id,
+      1,
+    );
+    const warehouseSearch = await http<unknown>(
+      'GET',
+      '/pos/search-items',
+      undefined,
+      warehouseSession.accessToken,
+    );
+    const warehouseValidation = await validateProductCart(
+      warehouseSession.accessToken,
+      product.body.id,
+      1,
+    );
+    const storedProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+
+    expect(invalid.status).toBe(201);
+    expect(invalid.body.valid).toBe(false);
+    expect(invalid.body.errors.map(({ code }) => code)).toEqual(
+      expect.arrayContaining([
+        'ITEM_NOT_AVAILABLE',
+        'INVALID_QUANTITY',
+        'INVALID_DISCOUNT',
+        'DISCOUNT_EXCEEDS_SUBTOTAL',
+      ]),
+    );
+    expect(insufficientStock.body.valid).toBe(false);
+    expect(insufficientStock.body.errors.map(({ code }) => code)).toContain(
+      'INSUFFICIENT_STOCK',
+    );
+    expect(allowedStock.body.valid).toBe(true);
+    expect(cashierSearch.status).toBe(200);
+    expect(cashierValidation.status).toBe(201);
+    expect(cashierValidation.body.valid).toBe(true);
+    expect(sellerSearch.status).toBe(200);
+    expect(sellerValidation.status).toBe(201);
+    expect(sellerValidation.body.valid).toBe(true);
+    expect(warehouseSearch.status).toBe(403);
+    expect(warehouseValidation.status).toBe(403);
+    expect(Number(storedProduct.stock)).toBe(1);
+  });
+
   it('creates and manages categories, brands, units, products and services', async () => {
     const registered = await registerCompany('catalog-crud');
     const category = await http<Category>(
@@ -1460,6 +1857,31 @@ function basicCustomerPayload(name: string) {
     documentType: CustomerDocumentType.NONE,
     taxpayerType: TaxpayerType.FINAL_CONSUMER,
   };
+}
+
+function validateProductCart(
+  accessToken: string,
+  productId: string,
+  quantity: number,
+) {
+  return http<{
+    valid: boolean;
+    errors: Array<{ code: string }>;
+  }>(
+    'POST',
+    '/pos/validate-cart',
+    {
+      items: [
+        {
+          itemType: PosItemType.PRODUCT,
+          itemId: productId,
+          quantity,
+          discountAmount: 0,
+        },
+      ],
+    },
+    accessToken,
+  );
 }
 
 async function registerCompany(label: string) {

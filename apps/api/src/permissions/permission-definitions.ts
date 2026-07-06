@@ -41,4 +41,6 @@ export const PERMISSIONS = [
   ['customers.create', 'customers', PermissionAction.CREATE],
   ['customers.update', 'customers', PermissionAction.UPDATE],
   ['customers.change_status', 'customers', PermissionAction.DISABLE],
+  ['pos.access', 'pos', PermissionAction.VIEW],
+  ['pos.validate_cart', 'pos', PermissionAction.UPDATE],
 ] as const;

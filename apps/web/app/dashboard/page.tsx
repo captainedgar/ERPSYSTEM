@@ -84,6 +84,19 @@ export default function DashboardPage() {
                 </Link>
               </>
             )}
+            {['OWNER', 'ADMIN', 'CASHIER', 'SELLER'].includes(
+              user.role.code,
+            ) && (
+              <>
+                <span className="mx-3 text-slate-700">·</span>
+                <Link
+                  className="font-semibold text-emerald-400 hover:text-emerald-300"
+                  href="/pos"
+                >
+                  Abrir POS
+                </Link>
+              </>
+            )}
           </div>
         </section>
       </div>

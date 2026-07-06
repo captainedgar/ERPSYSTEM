@@ -14,6 +14,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { CustomersModule } from './customers/customers.module';
 import { HealthController } from './health.controller';
 import { PermissionsModule } from './permissions/permissions.module';
+import { PosModule } from './pos/pos.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ProductsModule } from './products/products.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     SessionsModule,
     PermissionsModule,
+    PosModule,
     RolesModule,
     AuthModule,
     InventoryModule,

@@ -136,6 +136,17 @@ export enum TaxpayerType {
   NONE = 'NONE',
 }
 
+export enum PosItemType {
+  PRODUCT = 'PRODUCT',
+  SERVICE = 'SERVICE',
+}
+
+export enum PosSearchType {
+  PRODUCT = 'PRODUCT',
+  SERVICE = 'SERVICE',
+  ALL = 'ALL',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;
