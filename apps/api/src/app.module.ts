@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { BrandsModule } from './brands/brands.module';
 import { BranchesModule } from './branches/branches.module';
 import { BusinessSettingsModule } from './business-settings/business-settings.module';
+import { CashModule } from './cash/cash.module';
 import { CategoriesModule } from './categories/categories.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -19,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ProductsModule } from './products/products.module';
 import { RolesModule } from './roles/roles.module';
+import { SalesModule } from './sales/sales.module';
 import { ServicesModule } from './services/services.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { UnitsModule } from './units/units.module';
@@ -35,8 +37,10 @@ import { UsersModule } from './users/users.module';
     AuditModule,
     SessionsModule,
     PermissionsModule,
+    CashModule,
     PosModule,
     RolesModule,
+    SalesModule,
     AuthModule,
     InventoryModule,
     CompaniesModule,

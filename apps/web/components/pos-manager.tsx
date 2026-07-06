@@ -15,13 +15,38 @@ import {
   type CartValidationResponse,
   type PosItem,
 } from '@/lib/pos';
+import { createSale, PaymentMethod, type Sale } from '@/lib/sales';
 
 interface CartLine extends PosItem {
   quantity: number;
   discountAmount: number;
 }
 
+interface PaymentLine {
+  id: string;
+  method: PaymentMethod;
+  amount: string;
+  reference: string;
+}
+
 const pageLimit = 20;
+const paymentLabels: Record<PaymentMethod, string> = {
+  CASH: 'Efectivo',
+  CARD: 'Tarjeta',
+  TRANSFER: 'Transferencia',
+  CREDIT: 'Crédito',
+};
+
+function initialPayments(): PaymentLine[] {
+  return [
+    {
+      id: 'initial-payment',
+      method: PaymentMethod.CASH,
+      amount: '',
+      reference: '',
+    },
+  ];
+}
 
 export function PosManager() {
   const router = useRouter();
@@ -37,7 +62,11 @@ export function PosManager() {
   const [initializing, setInitializing] = useState(true);
   const [searching, setSearching] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [creatingSale, setCreatingSale] = useState(false);
   const [error, setError] = useState('');
+  const [notes, setNotes] = useState('');
+  const [payments, setPayments] = useState<PaymentLine[]>(initialPayments);
+  const [createdSale, setCreatedSale] = useState<Sale | null>(null);
   const [validation, setValidation] = useState<CartValidationResponse | null>(
     null,
   );
@@ -146,6 +175,7 @@ export function PosManager() {
 
   function addItem(item: PosItem) {
     setValidation(null);
+    setCreatedSale(null);
     setCart((current) => {
       const existing = current.find(
         (line) => line.id === item.id && line.type === item.type,
@@ -166,6 +196,7 @@ export function PosManager() {
     value: number,
   ) {
     setValidation(null);
+    setCreatedSale(null);
     setCart((current) =>
       current.map((candidate) =>
         candidate.id === line.id && candidate.type === line.type
@@ -177,6 +208,7 @@ export function PosManager() {
 
   function removeLine(line: CartLine) {
     setValidation(null);
+    setCreatedSale(null);
     setCart((current) =>
       current.filter(
         (candidate) => candidate.id !== line.id || candidate.type !== line.type,
@@ -200,6 +232,19 @@ export function PosManager() {
         })),
       });
       setValidation(response);
+      if (
+        response.valid &&
+        payments.length === 1 &&
+        !payments[0]?.amount.trim()
+      ) {
+        setPayments((current) =>
+          current.map((payment, index) =>
+            index === 0
+              ? { ...payment, amount: String(response.total) }
+              : payment,
+          ),
+        );
+      }
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -210,6 +255,80 @@ export function PosManager() {
       setValidating(false);
     }
   }
+
+  function addPayment() {
+    setPayments((current) => [
+      ...current,
+      {
+        id: globalThis.crypto.randomUUID(),
+        method: PaymentMethod.CASH,
+        amount: '',
+        reference: '',
+      },
+    ]);
+  }
+
+  function updatePayment(
+    id: string,
+    field: 'method' | 'amount' | 'reference',
+    value: string,
+  ) {
+    setPayments((current) =>
+      current.map((payment) =>
+        payment.id === id ? { ...payment, [field]: value } : payment,
+      ),
+    );
+  }
+
+  async function submitSale() {
+    if (!validation?.valid || !cart.length) return;
+    setCreatingSale(true);
+    setError('');
+    try {
+      const sale = await createSale({
+        customerId: customerId || undefined,
+        items: cart.map((line) => ({
+          itemType: line.type,
+          itemId: line.id,
+          quantity: line.quantity,
+          discountAmount: line.discountAmount,
+        })),
+        payments: payments.map((payment) => ({
+          method: payment.method,
+          amount: Number(payment.amount),
+          reference: payment.reference.trim() || undefined,
+        })),
+        notes: notes.trim() || undefined,
+      });
+      setCreatedSale(sale);
+      setCart([]);
+      setCustomerId('');
+      setValidation(null);
+      setNotes('');
+      setPayments(initialPayments());
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo registrar la venta',
+      );
+    } finally {
+      setCreatingSale(false);
+    }
+  }
+
+  const paymentTotal = payments.reduce(
+    (total, payment) => roundMoney(total + Number(payment.amount || 0)),
+    0,
+  );
+  const paymentsAreValid =
+    payments.length > 0 &&
+    payments.every(
+      (payment) =>
+        Number.isFinite(Number(payment.amount)) && Number(payment.amount) > 0,
+    ) &&
+    !!validation &&
+    paymentTotal >= Number(validation.total);
 
   if (authLoading || (canUsePos && initializing)) {
     return (
@@ -256,7 +375,7 @@ export function PosManager() {
             </p>
             <h1 className="mt-1 text-3xl font-semibold">Carrito de venta</h1>
             <p className="mt-2 text-slate-400">
-              Prepara y valida la operación sin cobrar ni descontar inventario.
+              Valida y registra ventas internas con su pago e inventario.
             </p>
           </div>
           <Link
@@ -273,6 +392,21 @@ export function PosManager() {
             role="alert"
           >
             {error}
+          </div>
+        )}
+
+        {createdSale && (
+          <div
+            className="mt-5 rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200"
+            role="status"
+          >
+            Venta {createdSale.saleNumber} registrada correctamente.{' '}
+            <Link
+              className="font-semibold underline"
+              href={`/sales/${createdSale.id}`}
+            >
+              Ver detalle
+            </Link>
           </div>
         )}
 
@@ -365,6 +499,7 @@ export function PosManager() {
                   onClick={() => {
                     setCart([]);
                     setValidation(null);
+                    setCreatedSale(null);
                   }}
                   type="button"
                 >
@@ -380,6 +515,7 @@ export function PosManager() {
                 onChange={(event) => {
                   setCustomerId(event.target.value);
                   setValidation(null);
+                  setCreatedSale(null);
                 }}
               >
                 <option value="">Consumidor final / sin cliente</option>
@@ -415,6 +551,104 @@ export function PosManager() {
 
             {validation && <ValidationNotice validation={validation} />}
 
+            {validation?.valid && (
+              <div className="mt-5 border-t border-slate-800 pt-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">Pagos</h3>
+                  <button
+                    className="text-sm text-emerald-400 hover:text-emerald-300"
+                    onClick={addPayment}
+                    type="button"
+                  >
+                    Agregar pago
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {payments.map((payment) => (
+                    <div
+                      className="grid gap-2 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2"
+                      key={payment.id}
+                    >
+                      <label>
+                        Método
+                        <select
+                          value={payment.method}
+                          onChange={(event) =>
+                            updatePayment(
+                              payment.id,
+                              'method',
+                              event.target.value,
+                            )
+                          }
+                        >
+                          {Object.values(PaymentMethod).map((method) => (
+                            <option key={method} value={method}>
+                              {paymentLabels[method]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Monto
+                        <input
+                          min="0.01"
+                          step="0.01"
+                          type="number"
+                          value={payment.amount}
+                          onChange={(event) =>
+                            updatePayment(
+                              payment.id,
+                              'amount',
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="sm:col-span-2">
+                        Referencia (opcional)
+                        <input
+                          value={payment.reference}
+                          onChange={(event) =>
+                            updatePayment(
+                              payment.id,
+                              'reference',
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      {payments.length > 1 && (
+                        <button
+                          className="text-left text-xs text-rose-300 hover:text-rose-200 sm:col-span-2"
+                          onClick={() =>
+                            setPayments((current) =>
+                              current.filter(
+                                (candidate) => candidate.id !== payment.id,
+                              ),
+                            )
+                          }
+                          type="button"
+                        >
+                          Quitar pago
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-right text-sm text-slate-400">
+                  Pagos: {currency(paymentTotal)}
+                </p>
+                <label className="mt-3">
+                  Notas (opcional)
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+
             <Button
               className="mt-5 w-full"
               disabled={!cart.length || validating}
@@ -425,11 +659,12 @@ export function PosManager() {
             </Button>
             <Button
               className="mt-2 w-full"
-              disabled
+              disabled={!validation?.valid || !paymentsAreValid || creatingSale}
+              onClick={() => void submitSale()}
               type="button"
               variant="secondary"
             >
-              Cobrar · Próxima fase
+              {creatingSale ? 'Registrando venta…' : 'Finalizar venta'}
             </Button>
           </section>
         </div>
@@ -588,7 +823,7 @@ function ValidationNotice({
     >
       <p className="font-semibold">
         {validation.valid
-          ? 'Carrito válido. Listo para la próxima fase.'
+          ? 'Carrito válido. Confirma los pagos para finalizar.'
           : 'El carrito necesita correcciones.'}
       </p>
       {validation.errors.length > 0 && (

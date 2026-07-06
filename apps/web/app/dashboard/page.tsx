@@ -97,6 +97,32 @@ export default function DashboardPage() {
                 </Link>
               </>
             )}
+            {['OWNER', 'ADMIN', 'CASHIER', 'SELLER', 'ACCOUNTING'].includes(
+              user.role.code,
+            ) && (
+              <>
+                <span className="mx-3 text-slate-700">·</span>
+                <Link
+                  className="font-semibold text-emerald-400 hover:text-emerald-300"
+                  href="/sales"
+                >
+                  Ver ventas
+                </Link>
+              </>
+            )}
+            {['OWNER', 'ADMIN', 'CASHIER', 'SELLER', 'ACCOUNTING'].includes(
+              user.role.code,
+            ) && (
+              <>
+                <span className="mx-3 text-slate-700">·</span>
+                <Link
+                  className="font-semibold text-emerald-400 hover:text-emerald-300"
+                  href="/cash"
+                >
+                  Ver caja
+                </Link>
+              </>
+            )}
           </div>
         </section>
       </div>

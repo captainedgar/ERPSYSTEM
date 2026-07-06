@@ -26,6 +26,14 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'customers.create',
     'pos.access',
     'pos.validate_cart',
+    'sales.view',
+    'sales.create',
+    'sales.view_detail',
+    'cash.view',
+    'cash.open',
+    'cash.close',
+    'cash.manual_movement',
+    'cash.view_sessions',
   ],
   SELLER: [
     'branches.view',
@@ -40,6 +48,10 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'customers.create',
     'pos.access',
     'pos.validate_cart',
+    'sales.view',
+    'sales.create',
+    'sales.view_detail',
+    'cash.view',
   ],
   WAREHOUSE: [
     'branches.view',
@@ -70,6 +82,10 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'inventory.view_low_stock',
     'customers.view',
     'customers.update',
+    'sales.view',
+    'sales.view_detail',
+    'cash.view',
+    'cash.view_sessions',
   ],
 };
 

@@ -2,6 +2,8 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   BusinessType,
+  CashMovementType,
+  CashSessionStatus,
   CatalogStatus,
   CategoryType,
   CustomerDocumentType,
@@ -10,6 +12,7 @@ import {
   InventoryMovementType,
   PaymentMethod,
   PrismaClient,
+  SaleStatus,
   TaxpayerType,
   UserRole,
   type Branch,
@@ -1346,6 +1349,695 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(Number(storedProduct.stock)).toBe(1);
   });
 
+  it('creates an internal sale with mixed payments and deducts only product inventory', async () => {
+    const registered = await registerCompany('sales-create');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      registered.accessToken,
+    );
+    const customer = await http<Customer>(
+      'POST',
+      '/customers',
+      basicCustomerPayload('Cliente venta'),
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto vendido',
+        price: 100,
+        taxRate: 18,
+        stock: 5,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio vendido', price: 50, taxRate: 18 },
+      registered.accessToken,
+    );
+    const payload = {
+      customerId: customer.body.id,
+      items: [
+        {
+          itemType: PosItemType.PRODUCT,
+          itemId: product.body.id,
+          quantity: 2,
+          discountAmount: 20,
+        },
+        {
+          itemType: PosItemType.SERVICE,
+          itemId: service.body.id,
+          quantity: 1,
+          discountAmount: 0,
+        },
+      ],
+      payments: [
+        { method: PaymentMethod.CASH, amount: 100 },
+        {
+          method: PaymentMethod.CREDIT,
+          amount: 171.4,
+          reference: 'Crédito interno',
+        },
+      ],
+      notes: 'Venta mixta de prueba',
+    };
+
+    const anonymous = await http<unknown>('POST', '/sales', payload);
+    const created = await http<{
+      id: string;
+      saleNumber: string;
+      status: SaleStatus;
+      subtotal: string;
+      discountTotal: string;
+      taxTotal: string;
+      total: string;
+      paidTotal: string;
+      balanceDue: string;
+      items: Array<{ productId: string | null; serviceId: string | null }>;
+      payments: Array<{ method: PaymentMethod }>;
+    }>('POST', '/sales', payload, registered.accessToken);
+    const listed = await http<{
+      items: Array<{ id: string; saleNumber: string }>;
+      total: number;
+    }>(
+      'GET',
+      '/sales?search=Cliente%20venta',
+      undefined,
+      registered.accessToken,
+    );
+    const detail = await http<{ id: string; notes: string }>(
+      'GET',
+      `/sales/${created.body.id}`,
+      undefined,
+      registered.accessToken,
+    );
+    const storedProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+    const movements = await prisma.inventoryMovement.findMany({
+      where: { referenceId: created.body.id },
+    });
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: { companyId: registered.company.id, module: 'sales' },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(anonymous.status).toBe(401);
+    expect(created.status).toBe(201);
+    expect(created.body.saleNumber).toMatch(/^V-\d{8}-[A-F0-9]{8}$/);
+    expect(created.body.status).toBe(SaleStatus.COMPLETED);
+    expect(Number(created.body.subtotal)).toBe(250);
+    expect(Number(created.body.discountTotal)).toBe(20);
+    expect(Number(created.body.taxTotal)).toBe(41.4);
+    expect(Number(created.body.total)).toBe(271.4);
+    expect(Number(created.body.paidTotal)).toBe(100);
+    expect(Number(created.body.balanceDue)).toBe(171.4);
+    expect(created.body.items).toHaveLength(2);
+    expect(created.body.payments.map(({ method }) => method)).toEqual([
+      PaymentMethod.CASH,
+      PaymentMethod.CREDIT,
+    ]);
+    expect(listed.status).toBe(200);
+    expect(listed.body.total).toBe(1);
+    expect(listed.body.items[0]?.id).toBe(created.body.id);
+    expect(detail.status).toBe(200);
+    expect(detail.body.notes).toBe('Venta mixta de prueba');
+    expect(Number(storedProduct.stock)).toBe(3);
+    expect(movements).toHaveLength(1);
+    expect(movements[0]?.type).toBe(InventoryMovementType.SALE_OUT);
+    expect(auditActions).toEqual(
+      expect.arrayContaining(['SALE_CREATED', 'SALE_STOCK_DEDUCTED']),
+    );
+  });
+
+  it('blocks insufficient stock, supports configured negative stock and restores stock on cancellation', async () => {
+    const registered = await registerCompany('sales-stock');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto con stock limitado',
+        price: 10,
+        taxRate: 18,
+        stock: 1,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+    const payload = salePayload(PosItemType.PRODUCT, product.body.id, 2, 23.6);
+    const blocked = await http<unknown>(
+      'POST',
+      '/sales',
+      payload,
+      registered.accessToken,
+    );
+    const afterBlocked = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { allowNegativeStock: true },
+      registered.accessToken,
+    );
+    const created = await http<{ id: string; status: SaleStatus }>(
+      'POST',
+      '/sales',
+      payload,
+      registered.accessToken,
+    );
+    const afterSale = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+    const roles = await getRoles(registered.accessToken);
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'sales-cancel-cashier',
+    );
+    const cashierSession = await login(cashier.email);
+    const forbidden = await http<unknown>(
+      'POST',
+      `/sales/${created.body.id}/cancel`,
+      { reason: 'Intento sin permiso' },
+      cashierSession.accessToken,
+    );
+    const cancelled = await http<{
+      status: SaleStatus;
+      cancelReason: string;
+    }>(
+      'POST',
+      `/sales/${created.body.id}/cancel`,
+      { reason: 'Error en la operación' },
+      registered.accessToken,
+    );
+    const repeated = await http<unknown>(
+      'POST',
+      `/sales/${created.body.id}/cancel`,
+      { reason: 'Segundo intento' },
+      registered.accessToken,
+    );
+    const restoredProduct = await prisma.product.findUniqueOrThrow({
+      where: { id: product.body.id },
+    });
+    const movementTypes = (
+      await prisma.inventoryMovement.findMany({
+        where: { referenceId: created.body.id },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).map(({ type }) => type);
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: { companyId: registered.company.id, module: 'sales' },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(blocked.status).toBe(400);
+    expect(Number(afterBlocked.stock)).toBe(1);
+    expect(created.status).toBe(201);
+    expect(Number(afterSale.stock)).toBe(-1);
+    expect(forbidden.status).toBe(403);
+    expect(cancelled.status).toBe(201);
+    expect(cancelled.body.status).toBe(SaleStatus.CANCELLED);
+    expect(cancelled.body.cancelReason).toBe('Error en la operación');
+    expect(repeated.status).toBe(400);
+    expect(Number(restoredProduct.stock)).toBe(1);
+    expect(movementTypes).toEqual([
+      InventoryMovementType.SALE_OUT,
+      InventoryMovementType.VOID_SALE_IN,
+    ]);
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'SALE_BLOCKED_INSUFFICIENT_STOCK',
+        'SALE_CANCELLED',
+        'SALE_STOCK_RESTORED',
+      ]),
+    );
+  });
+
+  it('enforces sales permissions and company isolation', async () => {
+    const companyA = await registerCompany('sales-tenant-a');
+    const companyB = await registerCompany('sales-tenant-b');
+    await Promise.all([
+      http<SettingsResponse>(
+        'PATCH',
+        '/business-settings',
+        { requireOpenCashForSales: false },
+        companyA.accessToken,
+      ),
+      http<SettingsResponse>(
+        'PATCH',
+        '/business-settings',
+        { requireOpenCashForSales: false },
+        companyB.accessToken,
+      ),
+    ]);
+    const serviceA = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio empresa A', price: 25, taxRate: 0 },
+      companyA.accessToken,
+    );
+    const serviceB = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio empresa B', price: 30, taxRate: 0 },
+      companyB.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, seller, accounting, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'sales-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.SELLER).id,
+        companyA.branch.id,
+        'sales-seller',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        companyA.branch.id,
+        'sales-accounting',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'sales-warehouse',
+      ),
+    ]);
+    const [cashierSession, sellerSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(seller.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const cashierSale = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceA.body.id, 1, 25),
+      cashierSession.accessToken,
+    );
+    const sellerSale = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceA.body.id, 1, 25),
+      sellerSession.accessToken,
+    );
+    const foreignSale = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceB.body.id, 1, 30),
+      companyB.accessToken,
+    );
+    const accountingList = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/sales',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingDetail = await http<{ id: string }>(
+      'GET',
+      `/sales/${cashierSale.body.id}`,
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingCreate = await http<unknown>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceA.body.id, 1, 25),
+      accountingSession.accessToken,
+    );
+    const warehouseList = await http<unknown>(
+      'GET',
+      '/sales',
+      undefined,
+      warehouseSession.accessToken,
+    );
+    const crossRead = await http<unknown>(
+      'GET',
+      `/sales/${foreignSale.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+
+    expect(cashierSale.status).toBe(201);
+    expect(sellerSale.status).toBe(201);
+    expect(foreignSale.status).toBe(201);
+    expect(accountingList.status).toBe(200);
+    expect(accountingList.body.items.map(({ id }) => id).sort()).toEqual(
+      [cashierSale.body.id, sellerSale.body.id].sort(),
+    );
+    expect(accountingDetail.status).toBe(200);
+    expect(accountingCreate.status).toBe(403);
+    expect(warehouseList.status).toBe(403);
+    expect(crossRead.status).toBe(404);
+  });
+
+  it('opens, moves, reconciles and closes cash with sale and cancellation movements', async () => {
+    const registered = await registerCompany('cash-lifecycle');
+    const anonymous = await http<unknown>('GET', '/cash/current');
+    const negative = await http<unknown>(
+      'POST',
+      '/cash/open',
+      { branchId: registered.branch.id, openingAmount: -1 },
+      registered.accessToken,
+    );
+    const opened = await openCash(
+      registered.accessToken,
+      registered.branch.id,
+      100,
+    );
+    const duplicate = await http<unknown>(
+      'POST',
+      '/cash/open',
+      { branchId: registered.branch.id, openingAmount: 10 },
+      registered.accessToken,
+    );
+    const current = await http<{
+      session: { id: string; status: CashSessionStatus };
+    }>('GET', '/cash/current', undefined, registered.accessToken);
+    const manualIn = await http<{ expectedCashAmount: string }>(
+      'POST',
+      '/cash/movements/manual-in',
+      {
+        cashSessionId: opened.id,
+        amount: 50,
+        reason: 'Fondo adicional',
+      },
+      registered.accessToken,
+    );
+    const manualOut = await http<{ expectedCashAmount: string }>(
+      'POST',
+      '/cash/movements/manual-out',
+      {
+        cashSessionId: opened.id,
+        amount: 20,
+        reason: 'Gasto menor',
+      },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio con caja', price: 100, taxRate: 0 },
+      registered.accessToken,
+    );
+    const saleToCancel = await http<{
+      id: string;
+      cashSessionId: string;
+    }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, service.body.id, 1, 100),
+      registered.accessToken,
+    );
+    const cancelled = await http<{ status: SaleStatus }>(
+      'POST',
+      `/sales/${saleToCancel.body.id}/cancel`,
+      { reason: 'Venta duplicada' },
+      registered.accessToken,
+    );
+    const serviceTwo = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Segundo servicio con caja', price: 40, taxRate: 0 },
+      registered.accessToken,
+    );
+    const activeSale = await http<{ id: string; cashSessionId: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceTwo.body.id, 1, 40),
+      registered.accessToken,
+    );
+    const detailBeforeClose = await http<{
+      expectedCashAmount: string;
+      salesCashTotal: string;
+      manualInTotal: string;
+      manualOutTotal: string;
+      movements: Array<{ type: CashMovementType; saleId: string | null }>;
+    }>('GET', `/cash/sessions/${opened.id}`, undefined, registered.accessToken);
+    const closed = await http<{
+      status: CashSessionStatus;
+      expectedCashAmount: string;
+      countedCashAmount: string;
+      differenceAmount: string;
+      salesCashTotal: string;
+    }>(
+      'POST',
+      '/cash/close',
+      {
+        cashSessionId: opened.id,
+        countedCashAmount: 165,
+        notes: 'Cierre de prueba',
+      },
+      registered.accessToken,
+    );
+    const movementAfterClose = await http<unknown>(
+      'POST',
+      '/cash/movements/manual-in',
+      {
+        cashSessionId: opened.id,
+        amount: 1,
+        reason: 'Movimiento tardío',
+      },
+      registered.accessToken,
+    );
+    const currentAfterClose = await http<{ session: null }>(
+      'GET',
+      '/cash/current',
+      undefined,
+      registered.accessToken,
+    );
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: { companyId: registered.company.id, module: 'cash' },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(anonymous.status).toBe(401);
+    expect(negative.status).toBe(400);
+    expect(duplicate.status).toBe(400);
+    expect(current.status).toBe(200);
+    expect(current.body.session.id).toBe(opened.id);
+    expect(current.body.session.status).toBe(CashSessionStatus.OPEN);
+    expect(Number(manualIn.body.expectedCashAmount)).toBe(150);
+    expect(Number(manualOut.body.expectedCashAmount)).toBe(130);
+    expect(saleToCancel.status).toBe(201);
+    expect(saleToCancel.body.cashSessionId).toBe(opened.id);
+    expect(cancelled.status).toBe(201);
+    expect(activeSale.status).toBe(201);
+    expect(activeSale.body.cashSessionId).toBe(opened.id);
+    expect(Number(detailBeforeClose.body.salesCashTotal)).toBe(140);
+    expect(Number(detailBeforeClose.body.manualInTotal)).toBe(50);
+    expect(Number(detailBeforeClose.body.manualOutTotal)).toBe(20);
+    expect(Number(detailBeforeClose.body.expectedCashAmount)).toBe(170);
+    expect(detailBeforeClose.body.movements.map(({ type }) => type)).toEqual(
+      expect.arrayContaining([
+        CashMovementType.OPENING,
+        CashMovementType.MANUAL_IN,
+        CashMovementType.MANUAL_OUT,
+        CashMovementType.SALE_CASH_IN,
+        CashMovementType.SALE_CANCELLED_OUT,
+      ]),
+    );
+    expect(
+      detailBeforeClose.body.movements.filter(
+        ({ type, saleId }) =>
+          type === CashMovementType.SALE_CASH_IN &&
+          saleId === activeSale.body.id,
+      ),
+    ).toHaveLength(1);
+    expect(closed.status).toBe(201);
+    expect(closed.body.status).toBe(CashSessionStatus.CLOSED);
+    expect(Number(closed.body.expectedCashAmount)).toBe(170);
+    expect(Number(closed.body.countedCashAmount)).toBe(165);
+    expect(Number(closed.body.differenceAmount)).toBe(-5);
+    expect(Number(closed.body.salesCashTotal)).toBe(140);
+    expect(movementAfterClose.status).toBe(400);
+    expect(currentAfterClose.status).toBe(200);
+    expect(currentAfterClose.body.session).toBeNull();
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'CASH_SESSION_OPENED',
+        'CASH_MANUAL_IN',
+        'CASH_MANUAL_OUT',
+        'CASH_SALE_PAYMENT_REGISTERED',
+        'CASH_SALE_CANCELLED_REVERSED',
+        'CASH_SESSION_CLOSED',
+      ]),
+    );
+  });
+
+  it('enforces the open-cash sales setting and allows configured sales without cash', async () => {
+    const registered = await registerCompany('cash-required');
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio caja requerida', price: 25, taxRate: 0 },
+      registered.accessToken,
+    );
+    const blocked = await http<unknown>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, service.body.id, 1, 25),
+      registered.accessToken,
+    );
+    const blockedAudit = await prisma.auditLog.findFirst({
+      where: {
+        companyId: registered.company.id,
+        action: 'CASH_REQUIRED_FOR_SALE_BLOCKED',
+      },
+    });
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      registered.accessToken,
+    );
+    const allowed = await http<{ id: string; cashSessionId: string | null }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, service.body.id, 1, 25),
+      registered.accessToken,
+    );
+    const movements = await prisma.cashMovement.count({
+      where: { companyId: registered.company.id },
+    });
+
+    expect(blocked.status).toBe(400);
+    expect(blockedAudit).not.toBeNull();
+    expect(allowed.status).toBe(201);
+    expect(allowed.body.cashSessionId).toBeNull();
+    expect(movements).toBe(0);
+  });
+
+  it('enforces cash permissions and isolates session history by company', async () => {
+    const companyA = await registerCompany('cash-tenant-a');
+    const companyB = await registerCompany('cash-tenant-b');
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, seller, accounting, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'cash-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.SELLER).id,
+        companyA.branch.id,
+        'cash-seller',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        companyA.branch.id,
+        'cash-accounting',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'cash-warehouse',
+      ),
+    ]);
+    const [cashierSession, sellerSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(seller.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const cashierCash = await openCash(
+      cashierSession.accessToken,
+      companyA.branch.id,
+      20,
+    );
+    const sellerCurrent = await http<{ session: null }>(
+      'GET',
+      '/cash/current',
+      undefined,
+      sellerSession.accessToken,
+    );
+    const sellerClose = await http<unknown>(
+      'POST',
+      '/cash/close',
+      { cashSessionId: cashierCash.id, countedCashAmount: 20 },
+      sellerSession.accessToken,
+    );
+    const warehouseCurrent = await http<unknown>(
+      'GET',
+      '/cash/current',
+      undefined,
+      warehouseSession.accessToken,
+    );
+    const closedByCashier = await http<{ status: CashSessionStatus }>(
+      'POST',
+      '/cash/close',
+      { cashSessionId: cashierCash.id, countedCashAmount: 20 },
+      cashierSession.accessToken,
+    );
+    const foreignCash = await openCash(
+      companyB.accessToken,
+      companyB.branch.id,
+      30,
+    );
+    const accountingList = await http<{
+      items: Array<{ id: string }>;
+      total: number;
+    }>('GET', '/cash/sessions', undefined, accountingSession.accessToken);
+    const accountingDetail = await http<{ id: string }>(
+      'GET',
+      `/cash/sessions/${cashierCash.id}`,
+      undefined,
+      accountingSession.accessToken,
+    );
+    const crossRead = await http<unknown>(
+      'GET',
+      `/cash/sessions/${foreignCash.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+
+    expect(cashierCash.status).toBe(CashSessionStatus.OPEN);
+    expect(sellerCurrent.status).toBe(200);
+    expect(sellerCurrent.body.session).toBeNull();
+    expect(sellerClose.status).toBe(403);
+    expect(warehouseCurrent.status).toBe(403);
+    expect(closedByCashier.status).toBe(201);
+    expect(closedByCashier.body.status).toBe(CashSessionStatus.CLOSED);
+    expect(accountingList.status).toBe(200);
+    expect(accountingList.body.total).toBe(1);
+    expect(accountingList.body.items[0]?.id).toBe(cashierCash.id);
+    expect(accountingDetail.status).toBe(200);
+    expect(accountingDetail.body.id).toBe(cashierCash.id);
+    expect(crossRead.status).toBe(404);
+  });
+
   it('creates and manages categories, brands, units, products and services', async () => {
     const registered = await registerCompany('catalog-crud');
     const category = await http<Category>(
@@ -1833,6 +2525,11 @@ async function resetDatabase() {
   await prisma.$transaction([
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
+    prisma.cashMovement.deleteMany(),
+    prisma.payment.deleteMany(),
+    prisma.saleItem.deleteMany(),
+    prisma.sale.deleteMany(),
+    prisma.cashSession.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
     prisma.customer.deleteMany(),
     prisma.product.deleteMany(),
@@ -1848,6 +2545,32 @@ async function resetDatabase() {
     prisma.branch.deleteMany(),
     prisma.company.deleteMany(),
   ]);
+}
+
+async function openCash(
+  accessToken: string,
+  branchId: string,
+  openingAmount: number,
+) {
+  const response = await http<{
+    id: string;
+    status: CashSessionStatus;
+    expectedCashAmount: string;
+  }>('POST', '/cash/open', { branchId, openingAmount }, accessToken);
+  expect(response.status).toBe(201);
+  return response.body;
+}
+
+function salePayload(
+  itemType: PosItemType,
+  itemId: string,
+  quantity: number,
+  total: number,
+) {
+  return {
+    items: [{ itemType, itemId, quantity, discountAmount: 0 }],
+    payments: [{ method: PaymentMethod.CASH, amount: total }],
+  };
 }
 
 function basicCustomerPayload(name: string) {

@@ -32,6 +32,49 @@ export interface CartError {
   itemId?: string;
 }
 
+export interface CalculatedCartItem {
+  itemId: string;
+  itemType: PosItemType;
+  productId: string | null;
+  serviceId: string | null;
+  name: string;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  discountAmount: number;
+  lineSubtotal: number;
+  taxAmount: number;
+  lineTotal: number;
+  affectsInventory: boolean;
+}
+
+export interface CartCalculation {
+  valid: boolean;
+  errors: CartError[];
+  warnings: CartError[];
+  customer: {
+    id: string;
+    name: string;
+    documentType: string;
+    documentNumber: string | null;
+  } | null;
+  items: CalculatedCartItem[];
+  inventory: Array<{
+    productId: string;
+    name: string;
+    quantity: number;
+    currentStock: number;
+    unitCost: number;
+    trackInventory: boolean;
+  }>;
+  allowNegativeStock: boolean;
+  subtotal: number;
+  taxTotal: number;
+  discountTotal: number;
+  total: number;
+}
+
 @Injectable()
 export class PosService {
   constructor(private readonly prisma: PrismaService) {}
@@ -126,36 +169,49 @@ export class PosService {
   }
 
   async validateCart(user: AuthUser, dto: ValidateCartDto) {
+    const calculation = await this.calculateCart(
+      this.prisma,
+      user.companyId,
+      dto,
+    );
+    return this.publicCalculation(calculation);
+  }
+
+  async calculateCart(
+    client: Prisma.TransactionClient | PrismaService,
+    companyId: string,
+    dto: ValidateCartDto,
+  ): Promise<CartCalculation> {
     const productIds = this.uniqueIds(dto.items, PosItemType.PRODUCT);
     const serviceIds = this.uniqueIds(dto.items, PosItemType.SERVICE);
     const [products, services, settings, customer] = await Promise.all([
-      this.prisma.product.findMany({
+      client.product.findMany({
         where: {
           id: { in: productIds },
-          companyId: user.companyId,
+          companyId,
           deletedAt: null,
           status: CatalogStatus.ACTIVE,
         },
         include: productInclude,
       }),
-      this.prisma.service.findMany({
+      client.service.findMany({
         where: {
           id: { in: serviceIds },
-          companyId: user.companyId,
+          companyId,
           deletedAt: null,
           status: CatalogStatus.ACTIVE,
         },
         include: serviceInclude,
       }),
-      this.prisma.businessSettings.findUniqueOrThrow({
-        where: { companyId: user.companyId },
+      client.businessSettings.findUniqueOrThrow({
+        where: { companyId },
         select: { allowNegativeStock: true },
       }),
       dto.customerId
-        ? this.prisma.customer.findFirst({
+        ? client.customer.findFirst({
             where: {
               id: dto.customerId,
-              companyId: user.companyId,
+              companyId,
               deletedAt: null,
               status: 'ACTIVE',
             },
@@ -173,7 +229,7 @@ export class PosService {
     const serviceMap = new Map(services.map((item) => [item.id, item]));
     const errors: CartError[] = [];
     const warnings: CartError[] = [];
-    const calculatedItems: Array<Record<string, unknown>> = [];
+    const calculatedItems: CalculatedCartItem[] = [];
     const requestedProductQuantities = new Map<string, Prisma.Decimal>();
     let subtotal = new Prisma.Decimal(0);
     let discountTotal = new Prisma.Decimal(0);
@@ -264,7 +320,10 @@ export class PosService {
       calculatedItems.push({
         itemId: item.id,
         itemType: input.itemType,
+        productId: input.itemType === PosItemType.PRODUCT ? input.itemId : null,
+        serviceId: input.itemType === PosItemType.SERVICE ? input.itemId : null,
         name: item.name,
+        description: item.description,
         quantity: quantity.toNumber(),
         unitPrice: this.money(item.price),
         taxRate: Number(item.taxRate),
@@ -272,6 +331,9 @@ export class PosService {
         lineSubtotal: this.money(lineSubtotal),
         taxAmount: this.money(taxAmount),
         lineTotal: this.money(lineTotal),
+        affectsInventory:
+          input.itemType === PosItemType.PRODUCT &&
+          Boolean(productMap.get(item.id)?.trackInventory),
       });
 
       if (input.itemType === PosItemType.PRODUCT) {
@@ -297,16 +359,47 @@ export class PosService {
       }
     }
 
+    const inventory = [...requestedProductQuantities]
+      .map(([productId, quantity]) => {
+        const product = productMap.get(productId);
+        if (!product) return null;
+        return {
+          productId,
+          name: product.name,
+          quantity: quantity.toNumber(),
+          currentStock: Number(product.stock),
+          unitCost: Number(product.cost),
+          trackInventory: product.trackInventory,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
     return {
       valid: errors.length === 0,
       errors,
       warnings,
       customer,
       items: calculatedItems,
+      inventory,
+      allowNegativeStock: settings.allowNegativeStock,
       subtotal: this.money(subtotal),
       taxTotal: this.money(taxTotal),
       discountTotal: this.money(discountTotal),
       total: this.money(subtotal.sub(discountTotal).add(taxTotal)),
+    };
+  }
+
+  private publicCalculation(calculation: CartCalculation) {
+    return {
+      valid: calculation.valid,
+      errors: calculation.errors,
+      warnings: calculation.warnings,
+      customer: calculation.customer,
+      items: calculation.items,
+      subtotal: calculation.subtotal,
+      taxTotal: calculation.taxTotal,
+      discountTotal: calculation.discountTotal,
+      total: calculation.total,
     };
   }
 

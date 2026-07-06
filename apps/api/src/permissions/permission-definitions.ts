@@ -43,4 +43,13 @@ export const PERMISSIONS = [
   ['customers.change_status', 'customers', PermissionAction.DISABLE],
   ['pos.access', 'pos', PermissionAction.VIEW],
   ['pos.validate_cart', 'pos', PermissionAction.UPDATE],
+  ['sales.view', 'sales', PermissionAction.VIEW],
+  ['sales.create', 'sales', PermissionAction.CREATE],
+  ['sales.cancel', 'sales', PermissionAction.DISABLE],
+  ['sales.view_detail', 'sales', PermissionAction.VIEW],
+  ['cash.view', 'cash', PermissionAction.VIEW],
+  ['cash.open', 'cash', PermissionAction.CREATE],
+  ['cash.close', 'cash', PermissionAction.UPDATE],
+  ['cash.manual_movement', 'cash', PermissionAction.CREATE],
+  ['cash.view_sessions', 'cash', PermissionAction.VIEW],
 ] as const;

@@ -21,7 +21,14 @@ export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(event: AuditEvent) {
-    return this.prisma.auditLog.create({
+    return this.createWithClient(this.prisma, event);
+  }
+
+  createWithClient(
+    client: Prisma.TransactionClient | PrismaService,
+    event: AuditEvent,
+  ) {
+    return client.auditLog.create({
       data: {
         companyId: event.companyId,
         branchId: event.branchId,

@@ -147,6 +147,32 @@ export enum PosSearchType {
   ALL = 'ALL',
 }
 
+export enum SaleStatus {
+  DRAFT = 'DRAFT',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum SaleItemType {
+  PRODUCT = 'PRODUCT',
+  SERVICE = 'SERVICE',
+}
+
+export enum CashSessionStatus {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED',
+}
+
+export enum CashMovementType {
+  OPENING = 'OPENING',
+  SALE_CASH_IN = 'SALE_CASH_IN',
+  MANUAL_IN = 'MANUAL_IN',
+  MANUAL_OUT = 'MANUAL_OUT',
+  SALE_CANCELLED_OUT = 'SALE_CANCELLED_OUT',
+  ADJUSTMENT_IN = 'ADJUSTMENT_IN',
+  ADJUSTMENT_OUT = 'ADJUSTMENT_OUT',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;
