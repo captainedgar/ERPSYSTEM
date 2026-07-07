@@ -173,6 +173,16 @@ export enum CashMovementType {
   ADJUSTMENT_OUT = 'ADJUSTMENT_OUT',
 }
 
+export enum InternalDocumentType {
+  RECEIPT = 'RECEIPT',
+  INTERNAL_INVOICE = 'INTERNAL_INVOICE',
+}
+
+export enum InternalDocumentStatus {
+  ISSUED = 'ISSUED',
+  VOIDED = 'VOIDED',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

@@ -9,6 +9,8 @@ import {
   CustomerDocumentType,
   CustomerStatus,
   CustomerType,
+  InternalDocumentStatus,
+  InternalDocumentType,
   InventoryMovementType,
   PaymentMethod,
   PrismaClient,
@@ -1716,6 +1718,400 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(crossRead.status).toBe(404);
   });
 
+  it('creates, prints, voids and isolates internal non-fiscal documents', async () => {
+    const companyA = await registerCompany('internal-documents-a');
+    const companyB = await registerCompany('internal-documents-b');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      companyB.accessToken,
+    );
+    const cashSession = await openCash(
+      companyA.accessToken,
+      companyA.branch.id,
+      50,
+    );
+    const [productA, serviceA, serviceB] = await Promise.all([
+      http<Product>(
+        'POST',
+        '/products',
+        {
+          name: 'Producto documento interno',
+          price: 100,
+          taxRate: 0,
+          stock: 5,
+          trackInventory: true,
+        },
+        companyA.accessToken,
+      ),
+      http<Service>(
+        'POST',
+        '/services',
+        { name: 'Servicio segundo documento', price: 25, taxRate: 0 },
+        companyA.accessToken,
+      ),
+      http<Service>(
+        'POST',
+        '/services',
+        { name: 'Servicio documento externo', price: 30, taxRate: 0 },
+        companyB.accessToken,
+      ),
+    ]);
+    const saleA = await http<{
+      id: string;
+      status: SaleStatus;
+      cashSessionId: string;
+    }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.PRODUCT, productA.body.id, 2, 200),
+      companyA.accessToken,
+    );
+    const secondSaleA = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceA.body.id, 1, 25),
+      companyA.accessToken,
+    );
+    const saleB = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceB.body.id, 1, 30),
+      companyB.accessToken,
+    );
+    const productAfterSale = await prisma.product.findUniqueOrThrow({
+      where: { id: productA.body.id },
+    });
+    const inventoryMovementsAfterSale = await prisma.inventoryMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const cashSessionAfterSale = await prisma.cashSession.findUniqueOrThrow({
+      where: { id: cashSession.id },
+    });
+    const cashMovementsAfterSale = await prisma.cashMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+
+    const anonymous = await http<unknown>(
+      'POST',
+      `/internal-documents/from-sale/${saleA.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+    );
+    const receipt = await http<{
+      id: string;
+      documentNumber: string;
+      documentType: InternalDocumentType;
+      status: InternalDocumentStatus;
+      saleId: string;
+      total: string;
+    }>(
+      'POST',
+      `/internal-documents/from-sale/${saleA.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyA.accessToken,
+    );
+    const duplicateReceipt = await http<unknown>(
+      'POST',
+      `/internal-documents/from-sale/${saleA.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyA.accessToken,
+    );
+    const invoice = await http<{
+      id: string;
+      documentNumber: string;
+      documentType: InternalDocumentType;
+    }>(
+      'POST',
+      `/internal-documents/from-sale/${saleA.body.id}`,
+      { documentType: InternalDocumentType.INTERNAL_INVOICE },
+      companyA.accessToken,
+    );
+    const secondReceipt = await http<{ id: string; documentNumber: string }>(
+      'POST',
+      `/internal-documents/from-sale/${secondSaleA.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyA.accessToken,
+    );
+    const foreignReceipt = await http<{ id: string }>(
+      'POST',
+      `/internal-documents/from-sale/${saleB.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyB.accessToken,
+    );
+    const listA = await http<{
+      items: Array<{ id: string; documentNumber: string }>;
+      total: number;
+    }>('GET', '/internal-documents', undefined, companyA.accessToken);
+    const saleDocuments = await http<Array<{ id: string }>>(
+      'GET',
+      `/sales/${saleA.body.id}/internal-documents`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossSaleDocuments = await http<unknown>(
+      'GET',
+      `/sales/${saleB.body.id}/internal-documents`,
+      undefined,
+      companyA.accessToken,
+    );
+    const detail = await http<{
+      id: string;
+      companyId: string;
+      sale: { id: string; saleNumber: string };
+      items: Array<{ name: string; total: string }>;
+    }>(
+      'GET',
+      `/internal-documents/${receipt.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const print = await http<{
+      disclaimer: string;
+      document: { id: string; documentNumber: string };
+      payments: Array<{ amount: string }>;
+      totals: { total: string };
+    }>(
+      'GET',
+      `/internal-documents/${receipt.body.id}/print`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossDocumentRead = await http<unknown>(
+      'GET',
+      `/internal-documents/${foreignReceipt.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const voided = await http<{
+      id: string;
+      status: InternalDocumentStatus;
+      voidReason: string;
+    }>(
+      'POST',
+      `/internal-documents/${receipt.body.id}/void`,
+      { reason: 'Error documental interno' },
+      companyA.accessToken,
+    );
+    const repeatedVoid = await http<unknown>(
+      'POST',
+      `/internal-documents/${receipt.body.id}/void`,
+      { reason: 'Segundo intento' },
+      companyA.accessToken,
+    );
+    const saleAfterVoid = await prisma.sale.findUniqueOrThrow({
+      where: { id: saleA.body.id },
+    });
+    const productAfterVoid = await prisma.product.findUniqueOrThrow({
+      where: { id: productA.body.id },
+    });
+    const inventoryMovementsAfterVoid = await prisma.inventoryMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const cashSessionAfterVoid = await prisma.cashSession.findUniqueOrThrow({
+      where: { id: cashSession.id },
+    });
+    const cashMovementsAfterVoid = await prisma.cashMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: {
+          companyId: companyA.company.id,
+          module: 'internal_documents',
+        },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(anonymous.status).toBe(401);
+    expect(receipt.status).toBe(201);
+    expect(receipt.body.documentType).toBe(InternalDocumentType.RECEIPT);
+    expect(receipt.body.status).toBe(InternalDocumentStatus.ISSUED);
+    expect(receipt.body.saleId).toBe(saleA.body.id);
+    expect(Number(receipt.body.total)).toBe(200);
+    expect(duplicateReceipt.status).toBe(400);
+    expect(invoice.status).toBe(201);
+    expect(invoice.body.documentType).toBe(
+      InternalDocumentType.INTERNAL_INVOICE,
+    );
+    expect(invoice.body.documentNumber).not.toBe(receipt.body.documentNumber);
+    expect(secondReceipt.status).toBe(201);
+    expect(secondReceipt.body.documentNumber).not.toBe(
+      receipt.body.documentNumber,
+    );
+    expect(foreignReceipt.status).toBe(201);
+    expect(listA.status).toBe(200);
+    expect(listA.body.total).toBe(3);
+    expect(listA.body.items.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        receipt.body.id,
+        invoice.body.id,
+        secondReceipt.body.id,
+      ]),
+    );
+    expect(
+      listA.body.items.some(({ id }) => id === foreignReceipt.body.id),
+    ).toBe(false);
+    expect(saleDocuments.status).toBe(200);
+    expect(saleDocuments.body.map(({ id }) => id).sort()).toEqual(
+      [receipt.body.id, invoice.body.id].sort(),
+    );
+    expect(crossSaleDocuments.status).toBe(404);
+    expect(detail.status).toBe(200);
+    expect(detail.body.companyId).toBe(companyA.company.id);
+    expect(detail.body.sale.id).toBe(saleA.body.id);
+    expect(detail.body.items).toHaveLength(1);
+    expect(print.status).toBe(200);
+    expect(print.body.disclaimer).toBe(
+      'Documento interno no fiscal. No válido como comprobante fiscal.',
+    );
+    expect(print.body.document.documentNumber).toBe(
+      receipt.body.documentNumber,
+    );
+    expect(Number(print.body.totals.total)).toBe(200);
+    expect(print.body.payments).toHaveLength(1);
+    expect(crossDocumentRead.status).toBe(404);
+    expect(voided.status).toBe(201);
+    expect(voided.body.status).toBe(InternalDocumentStatus.VOIDED);
+    expect(voided.body.voidReason).toBe('Error documental interno');
+    expect(repeatedVoid.status).toBe(400);
+    expect(saleA.body.status).toBe(SaleStatus.COMPLETED);
+    expect(saleAfterVoid.status).toBe(SaleStatus.COMPLETED);
+    expect(Number(productAfterSale.stock)).toBe(3);
+    expect(Number(productAfterVoid.stock)).toBe(3);
+    expect(inventoryMovementsAfterVoid).toBe(inventoryMovementsAfterSale);
+    expect(Number(cashSessionAfterVoid.expectedCashAmount)).toBe(
+      Number(cashSessionAfterSale.expectedCashAmount),
+    );
+    expect(cashMovementsAfterVoid).toBe(cashMovementsAfterSale);
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'INTERNAL_DOCUMENT_CREATED',
+        'INTERNAL_DOCUMENT_VOIDED',
+        'DOCUMENT_SEQUENCE_ADVANCED',
+        'INTERNAL_DOCUMENT_PRINT_VIEWED',
+      ]),
+    );
+  });
+
+  it('enforces internal document role permissions', async () => {
+    const registered = await registerCompany('internal-documents-permissions');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      registered.accessToken,
+    );
+    const service = await http<Service>(
+      'POST',
+      '/services',
+      { name: 'Servicio permisos documentos', price: 40, taxRate: 0 },
+      registered.accessToken,
+    );
+    const sale = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, service.body.id, 1, 40),
+      registered.accessToken,
+    );
+    const roles = await getRoles(registered.accessToken);
+    const [cashier, accounting, warehouse] = await Promise.all([
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        registered.branch.id,
+        'internal-documents-cashier',
+      ),
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        registered.branch.id,
+        'internal-documents-accounting',
+      ),
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        registered.branch.id,
+        'internal-documents-warehouse',
+      ),
+    ]);
+    const [cashierSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+
+    const cashierReceipt = await http<{ id: string }>(
+      'POST',
+      `/internal-documents/from-sale/${sale.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      cashierSession.accessToken,
+    );
+    const cashierList = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/internal-documents',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const cashierPrint = await http<{ disclaimer: string }>(
+      'GET',
+      `/internal-documents/${cashierReceipt.body.id}/print`,
+      undefined,
+      cashierSession.accessToken,
+    );
+    const accountingDetail = await http<{ id: string }>(
+      'GET',
+      `/internal-documents/${cashierReceipt.body.id}`,
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingPrint = await http<{ disclaimer: string }>(
+      'GET',
+      `/internal-documents/${cashierReceipt.body.id}/print`,
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingVoid = await http<{
+      status: InternalDocumentStatus;
+    }>(
+      'POST',
+      `/internal-documents/${cashierReceipt.body.id}/void`,
+      { reason: 'Anulacion por contabilidad' },
+      accountingSession.accessToken,
+    );
+    const warehouseCreate = await http<unknown>(
+      'POST',
+      `/internal-documents/from-sale/${sale.body.id}`,
+      { documentType: InternalDocumentType.INTERNAL_INVOICE },
+      warehouseSession.accessToken,
+    );
+    const warehouseVoid = await http<unknown>(
+      'POST',
+      `/internal-documents/${cashierReceipt.body.id}/void`,
+      { reason: 'Intento almacen' },
+      warehouseSession.accessToken,
+    );
+
+    expect(cashierReceipt.status).toBe(201);
+    expect(cashierList.status).toBe(200);
+    expect(cashierList.body.items.map(({ id }) => id)).toContain(
+      cashierReceipt.body.id,
+    );
+    expect(cashierPrint.status).toBe(200);
+    expect(cashierPrint.body.disclaimer).toBe(
+      'Documento interno no fiscal. No válido como comprobante fiscal.',
+    );
+    expect(accountingDetail.status).toBe(200);
+    expect(accountingDetail.body.id).toBe(cashierReceipt.body.id);
+    expect(accountingPrint.status).toBe(200);
+    expect(accountingVoid.status).toBe(201);
+    expect(accountingVoid.body.status).toBe(InternalDocumentStatus.VOIDED);
+    expect(warehouseCreate.status).toBe(403);
+    expect(warehouseVoid.status).toBe(403);
+  });
+
   it('opens, moves, reconciles and closes cash with sale and cancellation movements', async () => {
     const registered = await registerCompany('cash-lifecycle');
     const anonymous = await http<unknown>('GET', '/cash/current');
@@ -2527,9 +2923,12 @@ async function resetDatabase() {
     prisma.userSession.deleteMany(),
     prisma.cashMovement.deleteMany(),
     prisma.payment.deleteMany(),
+    prisma.internalDocumentItem.deleteMany(),
+    prisma.internalDocument.deleteMany(),
     prisma.saleItem.deleteMany(),
     prisma.sale.deleteMany(),
     prisma.cashSession.deleteMany(),
+    prisma.documentSequence.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
     prisma.customer.deleteMany(),
     prisma.product.deleteMany(),

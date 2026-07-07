@@ -52,4 +52,8 @@ export const PERMISSIONS = [
   ['cash.close', 'cash', PermissionAction.UPDATE],
   ['cash.manual_movement', 'cash', PermissionAction.CREATE],
   ['cash.view_sessions', 'cash', PermissionAction.VIEW],
+  ['internal_documents.view', 'internal_documents', PermissionAction.VIEW],
+  ['internal_documents.create', 'internal_documents', PermissionAction.CREATE],
+  ['internal_documents.print', 'internal_documents', PermissionAction.VIEW],
+  ['internal_documents.void', 'internal_documents', PermissionAction.DISABLE],
 ] as const;

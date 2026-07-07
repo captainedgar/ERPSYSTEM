@@ -7,15 +7,25 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import { currency, Status } from '@/components/sales-manager';
+import {
+  createInternalDocumentFromSale,
+  InternalDocumentStatus,
+  InternalDocumentType,
+  listSaleInternalDocuments,
+  type InternalDocument,
+} from '@/lib/internal-documents';
 import { cancelSale, getSale, SaleStatus, type Sale } from '@/lib/sales';
 
 export function SaleDetail({ saleId }: { saleId: string }) {
   const router = useRouter();
   const { loading: authLoading, user } = useAuth();
   const [sale, setSale] = useState<Sale | null>(null);
+  const [documents, setDocuments] = useState<InternalDocument[]>([]);
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [creatingDocument, setCreatingDocument] =
+    useState<InternalDocumentType | null>(null);
   const [error, setError] = useState('');
 
   const canView = [
@@ -37,7 +47,11 @@ export function SaleDetail({ saleId }: { saleId: string }) {
     async function load() {
       try {
         const response = await getSale(saleId);
-        if (!cancelled) setSale(response);
+        const saleDocuments = await listSaleInternalDocuments(saleId);
+        if (!cancelled) {
+          setSale(response);
+          setDocuments(saleDocuments);
+        }
       } catch (reason) {
         if (!cancelled) {
           setError(
@@ -70,6 +84,27 @@ export function SaleDetail({ saleId }: { saleId: string }) {
       );
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function createDocument(documentType: InternalDocumentType) {
+    if (!sale) return;
+    setCreatingDocument(documentType);
+    setError('');
+    try {
+      const document = await createInternalDocumentFromSale(
+        sale.id,
+        documentType,
+      );
+      setDocuments((current) => [document, ...current]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo generar el documento interno',
+      );
+    } finally {
+      setCreatingDocument(null);
     }
   }
 
@@ -209,6 +244,68 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                 Ver caja asociada
               </Link>
             )}
+            <div className="mt-5 border-t border-slate-800 pt-4">
+              <h3 className="font-semibold">Documentos internos</h3>
+              <div className="mt-3 grid gap-2">
+                {documents.length ? (
+                  documents.map((document) => (
+                    <Link
+                      className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm transition hover:border-slate-600"
+                      href={`/internal-documents/${document.id}`}
+                      key={document.id}
+                    >
+                      <span className="font-medium">
+                        {document.documentNumber}
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        {documentTypeLabel(document.documentType)} ·{' '}
+                        {document.status === InternalDocumentStatus.ISSUED
+                          ? 'Emitido'
+                          : 'Anulado'}
+                      </span>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Esta venta no tiene documentos internos.
+                  </p>
+                )}
+              </div>
+              {sale.status === SaleStatus.COMPLETED && (
+                <div className="mt-4 grid gap-2">
+                  <Button
+                    disabled={creatingDocument !== null}
+                    onClick={() =>
+                      void createDocument(InternalDocumentType.RECEIPT)
+                    }
+                    type="button"
+                    variant="secondary"
+                  >
+                    {creatingDocument === InternalDocumentType.RECEIPT
+                      ? 'Generando...'
+                      : 'Generar recibo interno'}
+                  </Button>
+                  <Button
+                    disabled={creatingDocument !== null}
+                    onClick={() =>
+                      void createDocument(InternalDocumentType.INTERNAL_INVOICE)
+                    }
+                    type="button"
+                    variant="secondary"
+                  >
+                    {creatingDocument === InternalDocumentType.INTERNAL_INVOICE
+                      ? 'Generando...'
+                      : 'Generar factura interna'}
+                  </Button>
+                  <Link
+                    className="text-center text-sm text-emerald-400"
+                    href={`/internal-documents?saleId=${sale.id}`}
+                  >
+                    Ver documentos internos
+                  </Link>
+                </div>
+              )}
+            </div>
             <dl className="mt-5 grid gap-2 border-t border-slate-800 pt-4 text-sm">
               <Row label="Subtotal" value={Number(sale.subtotal)} />
               <Row label="Descuento" value={-Number(sale.discountTotal)} />
@@ -265,6 +362,10 @@ export function SaleDetail({ saleId }: { saleId: string }) {
       </div>
     </main>
   );
+}
+
+function documentTypeLabel(type: string) {
+  return type === 'RECEIPT' ? 'Recibo' : 'Factura interna';
 }
 
 function Row({ label, value }: { label: string; value: number }) {
