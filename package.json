@@ -19,7 +19,11 @@
     "db:migrate": "npm run db:migrate --workspace=packages/database",
     "db:studio": "npm run db:studio --workspace=packages/database",
     "db:validate": "npm run db:validate --workspace=packages/database",
-    "db:format": "npm run db:format --workspace=packages/database"
+    "db:format": "npm run db:format --workspace=packages/database",
+    "db:clear-sensitive": "npm run db:clear-sensitive --workspace=packages/database",
+    "db:seed-platform-admin": "npm run db:seed-platform-admin --workspace=packages/database",
+    "db:seed-saas-plans": "npm run db:seed-saas-plans --workspace=packages/database",
+    "billing:process-overdue": "npm run billing:process-overdue --workspace=packages/database"
   },
   "engines": {
     "node": ">=20.9.0",

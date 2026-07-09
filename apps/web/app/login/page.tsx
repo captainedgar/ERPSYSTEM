@@ -43,7 +43,11 @@ export default function LoginPage() {
         false,
       );
       setSession(response.user, response);
-      router.push('/dashboard');
+      router.push(
+        response.user.company.status === 'SUSPENDED'
+          ? '/suspended'
+          : '/dashboard',
+      );
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : 'No se pudo iniciar sesión',

@@ -58,7 +58,7 @@ export class AuthGuard implements CanActivate {
               companyId: claims.companyId,
               status: 'ACTIVE',
               deletedAt: null,
-              company: { status: 'ACTIVE', deletedAt: null },
+              company: { deletedAt: null },
             },
           },
         },
@@ -68,6 +68,7 @@ export class AuthGuard implements CanActivate {
               id: true,
               companyId: true,
               branchId: true,
+              company: { select: { status: true } },
               role: { select: { id: true, code: true } },
             },
           },
@@ -80,6 +81,7 @@ export class AuthGuard implements CanActivate {
         branchId: session.user.branchId,
         roleId: session.user.role.id,
         roleCode: session.user.role.code,
+        companyStatus: session.user.company.status,
         sessionId: claims.sessionId,
       };
       return true;

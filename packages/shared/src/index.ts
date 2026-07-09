@@ -183,6 +183,43 @@ export enum InternalDocumentStatus {
   VOIDED = 'VOIDED',
 }
 
+export enum FiscalEnvironment {
+  SANDBOX = 'SANDBOX',
+  PRODUCTION = 'PRODUCTION',
+}
+
+export enum FiscalProviderMode {
+  MOCK = 'MOCK',
+  PROVIDER = 'PROVIDER',
+}
+
+export enum FiscalProviderStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum ElectronicInvoiceStatus {
+  DRAFT = 'DRAFT',
+  PENDING_PROVIDER = 'PENDING_PROVIDER',
+  SENT = 'SENT',
+  ACCEPTED = 'ACCEPTED',
+  REJECTED = 'REJECTED',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum ElectronicDocumentType {
+  E31 = 'E31',
+  E32 = 'E32',
+  E33 = 'E33',
+  E34 = 'E34',
+  E41 = 'E41',
+  E43 = 'E43',
+  E44 = 'E44',
+  E45 = 'E45',
+  INTERNAL_TEST = 'INTERNAL_TEST',
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;

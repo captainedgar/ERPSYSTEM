@@ -27,6 +27,17 @@ const publicUserSelect = {
   email: true,
   phone: true,
   status: true,
+  company: {
+    select: {
+      id: true,
+      name: true,
+      legalName: true,
+      businessType: true,
+      status: true,
+      logoUrl: true,
+      logoUpdatedAt: true,
+    },
+  },
   lastLoginAt: true,
   role: { select: { id: true, code: true, name: true } },
   branch: { select: { id: true, name: true, code: true } },

@@ -1,6 +1,21 @@
 import Link from 'next/link';
 
-import type { PlatformAuditLog, PlatformCompany } from '@/lib/platform';
+import type {
+  CompanySubscriptionStatus,
+  PlatformAuditLog,
+  PlatformCompany,
+} from '@/lib/platform';
+
+export const platformInputClass =
+  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
+export const platformLabelClass = 'text-sm font-medium text-slate-700';
+export const platformPanelClass =
+  'rounded-lg border border-slate-200 bg-white p-5 shadow-sm';
+export const platformLinkClass =
+  'text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline';
+export const platformErrorClass =
+  'mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700';
 
 export function PlatformHeader({ title }: { title: string }) {
   return (
@@ -70,6 +85,29 @@ export function PlatformStatusBadge({
     ACTIVE: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
     INACTIVE: 'border-zinc-600 bg-zinc-800 text-zinc-300',
     SUSPENDED: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+  }[status];
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+export function PlatformSubscriptionStatusBadge({
+  status,
+}: {
+  status: CompanySubscriptionStatus;
+}) {
+  const classes = {
+    ACTIVE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    CANCELLED: 'border-slate-200 bg-slate-100 text-slate-700',
+    GRACE_PERIOD: 'border-amber-200 bg-amber-50 text-amber-700',
+    PAYMENT_DUE: 'border-orange-200 bg-orange-50 text-orange-700',
+    SUSPENDED: 'border-red-200 bg-red-50 text-red-700',
+    TRIAL: 'border-blue-200 bg-blue-50 text-blue-700',
   }[status];
 
   return (

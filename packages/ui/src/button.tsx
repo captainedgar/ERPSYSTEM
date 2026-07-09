@@ -11,14 +11,15 @@ export function Button({
   ...props
 }: ButtonProps) {
   const styles = {
-    primary: 'bg-emerald-500 text-slate-950 hover:bg-emerald-400',
+    primary:
+      'bg-blue-600 text-white shadow-sm shadow-blue-600/10 hover:bg-blue-700',
     secondary:
-      'border border-slate-700 bg-slate-900 text-white hover:bg-slate-800',
+      'border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50',
   };
 
   return (
     <button
-      className={`inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold transition disabled:opacity-50 ${styles[variant]} ${className}`}
+      className={`inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-semibold transition focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]} ${className}`}
       type={type}
       {...props}
     />

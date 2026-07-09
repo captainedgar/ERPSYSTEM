@@ -156,17 +156,102 @@ enum InternalDocumentStatus {
   VOIDED
 }
 
+enum FiscalEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum FiscalProviderMode {
+  MOCK
+  PROVIDER
+}
+
+enum FiscalProviderStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ElectronicInvoiceStatus {
+  DRAFT
+  PENDING_PROVIDER
+  SENT
+  ACCEPTED
+  REJECTED
+  FAILED
+  CANCELLED
+}
+
+enum ElectronicDocumentType {
+  E31
+  E32
+  E33
+  E34
+  E41
+  E43
+  E44
+  E45
+  INTERNAL_TEST
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+  SUPPORT_ADMIN
+  BILLING_ADMIN
+  AUDITOR
+}
+
+enum PlatformUserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SaasBillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum CompanySubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAYMENT_DUE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionPaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD_MANUAL
+  CHECK
+  OTHER
+}
+
+enum SubscriptionEventType {
+  PLAN_ASSIGNED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_UPDATED
+  PAYMENT_REGISTERED
+  NEXT_PAYMENT_DATE_UPDATED
+  SUBSCRIPTION_GRACE_STARTED
+  COMPANY_AUTO_SUSPENDED_FOR_NON_PAYMENT
+  COMPANY_REACTIVATED_AFTER_PAYMENT
+  BILLING_OVERDUE_PROCESS_RUN
+}
+
 model Company {
-  id                    String                 @id @default(cuid())
+  id                    String                     @id @default(cuid())
   name                  String
   legalName             String?
-  rncOrCedula           String?                @unique
+  rncOrCedula           String?                    @unique
   phone                 String?
   email                 String?
   address               String?
   logoUrl               String?
+  logoFileKey           String?
+  logoUpdatedAt         DateTime?
   businessType          BusinessType
-  status                CompanyStatus          @default(ACTIVE)
+  status                CompanyStatus              @default(ACTIVE)
   branches              Branch[]
   users                 User[]
   roles                 Role[]
@@ -184,11 +269,20 @@ model Company {
   internalDocuments     InternalDocument[]
   internalDocumentItems InternalDocumentItem[]
   documentSequences     DocumentSequence[]
+  fiscalSettings        FiscalSettings?
+  fiscalProviders       FiscalProvider[]
+  fiscalCredentials     FiscalProviderCredential[]
+  electronicInvoices    ElectronicInvoice[]
+  electronicEvents      ElectronicInvoiceEvent[]
+  fiscalErrors          FiscalError[]
   cashSessions          CashSession[]
   cashMovements         CashMovement[]
   inventoryMovements    InventoryMovement[]
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  subscription          CompanySubscription?
+  subscriptionPayments  SubscriptionPayment[]
+  subscriptionEvents    SubscriptionEvent[]
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
   deletedAt             DateTime?
 
   @@map("companies")
@@ -209,6 +303,7 @@ model Branch {
   sales              Sale[]
   internalDocuments  InternalDocument[]
   documentSequences  DocumentSequence[]
+  electronicInvoices ElectronicInvoice[]
   cashSessions       CashSession[]
   cashMovements      CashMovement[]
   inventoryMovements InventoryMovement[]
@@ -241,6 +336,7 @@ model User {
   salesCancelled            Sale[]              @relation("SaleCancelledBy")
   internalDocumentsCreated  InternalDocument[]  @relation("InternalDocumentCreatedBy")
   internalDocumentsVoided   InternalDocument[]  @relation("InternalDocumentVoidedBy")
+  electronicInvoicesCreated ElectronicInvoice[] @relation("ElectronicInvoiceCreatedBy")
   paymentsCreated           Payment[]           @relation("PaymentCreatedBy")
   cashSessionsOpened        CashSession[]       @relation("CashSessionOpenedBy")
   cashSessionsClosed        CashSession[]       @relation("CashSessionClosedBy")
@@ -481,31 +577,32 @@ model Service {
 }
 
 model Customer {
-  id                String               @id @default(cuid())
-  companyId         String
-  type              CustomerType
-  name              String
-  commercialName    String?
-  documentType      CustomerDocumentType
-  documentNumber    String?
-  email             String?
-  phone             String?
-  mobile            String?
-  address           String?
-  city              String?
-  province          String?
-  country           String?
-  taxpayerType      TaxpayerType
-  paymentTermsDays  Int                  @default(0)
-  creditLimit       Decimal              @default(0) @db.Decimal(12, 2)
-  notes             String?
-  status            CustomerStatus       @default(ACTIVE)
-  company           Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  sales             Sale[]
-  internalDocuments InternalDocument[]
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  deletedAt         DateTime?
+  id                 String               @id @default(cuid())
+  companyId          String
+  type               CustomerType
+  name               String
+  commercialName     String?
+  documentType       CustomerDocumentType
+  documentNumber     String?
+  email              String?
+  phone              String?
+  mobile             String?
+  address            String?
+  city               String?
+  province           String?
+  country            String?
+  taxpayerType       TaxpayerType
+  paymentTermsDays   Int                  @default(0)
+  creditLimit        Decimal              @default(0) @db.Decimal(12, 2)
+  notes              String?
+  status             CustomerStatus       @default(ACTIVE)
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  sales              Sale[]
+  internalDocuments  InternalDocument[]
+  electronicInvoices ElectronicInvoice[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
 
   @@unique([companyId, documentNumber])
   @@index([companyId, status, name])
@@ -514,36 +611,37 @@ model Customer {
 }
 
 model Sale {
-  id                String             @id @default(cuid())
-  companyId         String
-  branchId          String
-  customerId        String?
-  cashSessionId     String?
-  saleNumber        String
-  status            SaleStatus         @default(COMPLETED)
-  subtotal          Decimal            @db.Decimal(12, 2)
-  taxTotal          Decimal            @db.Decimal(12, 2)
-  discountTotal     Decimal            @db.Decimal(12, 2)
-  total             Decimal            @db.Decimal(12, 2)
-  paidTotal         Decimal            @db.Decimal(12, 2)
-  balanceDue        Decimal            @db.Decimal(12, 2)
-  notes             String?
-  createdById       String
-  cancelledById     String?
-  cancelledAt       DateTime?
-  cancelReason      String?
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  branch            Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  customer          Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  cashSession       CashSession?       @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
-  createdBy         User               @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  cancelledBy       User?              @relation("SaleCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
-  items             SaleItem[]
-  payments          Payment[]
-  cashMovements     CashMovement[]
-  internalDocuments InternalDocument[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id                 String              @id @default(cuid())
+  companyId          String
+  branchId           String
+  customerId         String?
+  cashSessionId      String?
+  saleNumber         String
+  status             SaleStatus          @default(COMPLETED)
+  subtotal           Decimal             @db.Decimal(12, 2)
+  taxTotal           Decimal             @db.Decimal(12, 2)
+  discountTotal      Decimal             @db.Decimal(12, 2)
+  total              Decimal             @db.Decimal(12, 2)
+  paidTotal          Decimal             @db.Decimal(12, 2)
+  balanceDue         Decimal             @db.Decimal(12, 2)
+  notes              String?
+  createdById        String
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancelReason       String?
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch             Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  customer           Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cashSession        CashSession?        @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  createdBy          User                @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  cancelledBy        User?               @relation("SaleCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  items              SaleItem[]
+  payments           Payment[]
+  cashMovements      CashMovement[]
+  internalDocuments  InternalDocument[]
+  electronicInvoices ElectronicInvoice[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@unique([companyId, saleNumber])
   @@index([companyId, status, createdAt(sort: Desc)])
@@ -606,34 +704,35 @@ model Payment {
 }
 
 model InternalDocument {
-  id             String                 @id @default(cuid())
-  companyId      String
-  branchId       String
-  saleId         String
-  customerId     String?
-  documentNumber String
-  documentType   InternalDocumentType
-  status         InternalDocumentStatus @default(ISSUED)
-  subtotal       Decimal                @db.Decimal(12, 2)
-  taxTotal       Decimal                @db.Decimal(12, 2)
-  discountTotal  Decimal                @db.Decimal(12, 2)
-  total          Decimal                @db.Decimal(12, 2)
-  paidTotal      Decimal                @db.Decimal(12, 2)
-  balanceDue     Decimal                @db.Decimal(12, 2)
-  notes          String?
-  createdById    String
-  voidedById     String?
-  voidedAt       DateTime?
-  voidReason     String?
-  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  branch         Branch                 @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  sale           Sale                   @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  customer       Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  createdBy      User                   @relation("InternalDocumentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  voidedBy       User?                  @relation("InternalDocumentVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
-  items          InternalDocumentItem[]
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  id                 String                 @id @default(cuid())
+  companyId          String
+  branchId           String
+  saleId             String
+  customerId         String?
+  documentNumber     String
+  documentType       InternalDocumentType
+  status             InternalDocumentStatus @default(ISSUED)
+  subtotal           Decimal                @db.Decimal(12, 2)
+  taxTotal           Decimal                @db.Decimal(12, 2)
+  discountTotal      Decimal                @db.Decimal(12, 2)
+  total              Decimal                @db.Decimal(12, 2)
+  paidTotal          Decimal                @db.Decimal(12, 2)
+  balanceDue         Decimal                @db.Decimal(12, 2)
+  notes              String?
+  createdById        String
+  voidedById         String?
+  voidedAt           DateTime?
+  voidReason         String?
+  company            Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch             Branch                 @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  sale               Sale                   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  customer           Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy          User                   @relation("InternalDocumentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  voidedBy           User?                  @relation("InternalDocumentVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  items              InternalDocumentItem[]
+  electronicInvoices ElectronicInvoice[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@unique([companyId, documentType, documentNumber])
   @@index([companyId, saleId, documentType, status])
@@ -689,6 +788,130 @@ model DocumentSequence {
   @@unique([companyId, branchId, documentType])
   @@index([companyId, documentType])
   @@map("document_sequences")
+}
+
+model FiscalSettings {
+  id               String             @id @default(cuid())
+  companyId        String             @unique
+  rnc              String?
+  legalName        String?
+  commercialName   String?
+  economicActivity String?
+  fiscalAddress    String?
+  province         String?
+  municipality     String?
+  environment      FiscalEnvironment  @default(SANDBOX)
+  providerMode     FiscalProviderMode @default(MOCK)
+  activeProviderId String?
+  enabled          Boolean            @default(false)
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@map("fiscal_settings")
+}
+
+model FiscalProvider {
+  id          String                     @id @default(cuid())
+  companyId   String
+  name        String
+  code        String
+  mode        FiscalProviderMode         @default(MOCK)
+  status      FiscalProviderStatus       @default(INACTIVE)
+  baseUrl     String?
+  company     Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  credentials FiscalProviderCredential[]
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("fiscal_providers")
+}
+
+model FiscalProviderCredential {
+  id             String         @id @default(cuid())
+  companyId      String
+  providerId     String
+  keyName        String
+  encryptedValue String
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  provider       FiscalProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([providerId, keyName])
+  @@index([companyId, providerId])
+  @@map("fiscal_provider_credentials")
+}
+
+model ElectronicInvoice {
+  id                 String                   @id @default(cuid())
+  companyId          String
+  branchId           String
+  saleId             String?
+  internalDocumentId String?
+  customerId         String?
+  documentType       ElectronicDocumentType   @default(INTERNAL_TEST)
+  status             ElectronicInvoiceStatus  @default(DRAFT)
+  fiscalNumber       String?
+  providerDocumentId String?
+  providerTrackId    String?
+  payload            Json
+  response           Json?
+  errorMessage       String?
+  sentAt             DateTime?
+  acceptedAt         DateTime?
+  rejectedAt         DateTime?
+  createdById        String
+  company            Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch             Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  sale               Sale?                    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  internalDocument   InternalDocument?        @relation(fields: [internalDocumentId], references: [id], onDelete: SetNull)
+  customer           Customer?                @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy          User                     @relation("ElectronicInvoiceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events             ElectronicInvoiceEvent[]
+  errors             FiscalError[]
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([companyId, saleId])
+  @@index([companyId, internalDocumentId])
+  @@index([companyId, customerId, createdAt(sort: Desc)])
+  @@map("electronic_invoices")
+}
+
+model ElectronicInvoiceEvent {
+  id                  String            @id @default(cuid())
+  companyId           String
+  electronicInvoiceId String
+  eventType           String
+  message             String
+  payload             Json?
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  electronicInvoice   ElectronicInvoice @relation(fields: [electronicInvoiceId], references: [id], onDelete: Cascade)
+  createdAt           DateTime          @default(now())
+
+  @@index([companyId, electronicInvoiceId, createdAt(sort: Desc)], map: "electronic_invoice_events_companyId_electronicInvoiceId_created")
+  @@map("electronic_invoice_events")
+}
+
+model FiscalError {
+  id                  String            @id @default(cuid())
+  companyId           String
+  electronicInvoiceId String
+  code                String
+  message             String
+  details             Json?
+  resolved            Boolean           @default(false)
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  electronicInvoice   ElectronicInvoice @relation(fields: [electronicInvoiceId], references: [id], onDelete: Cascade)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([companyId, electronicInvoiceId, resolved])
+  @@map("fiscal_errors")
 }
 
 model CashSession {
@@ -772,4 +995,144 @@ model InventoryMovement {
   @@index([companyId, branchId, createdAt(sort: Desc)])
   @@index([companyId, productId, createdAt(sort: Desc)])
   @@map("inventory_movements")
+}
+
+model PlatformUser {
+  id                   String                @id @default(cuid())
+  name                 String
+  email                String                @unique
+  passwordHash         String
+  role                 PlatformRole          @default(SUPPORT_ADMIN)
+  status               PlatformUserStatus    @default(ACTIVE)
+  lastLoginAt          DateTime?
+  sessions             PlatformSession[]
+  auditLogs            PlatformAuditLog[]
+  subscriptionPayments SubscriptionPayment[]
+  subscriptionEvents   SubscriptionEvent[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([status, role])
+  @@map("platform_users")
+}
+
+model PlatformSession {
+  id              String       @id
+  platformUserId  String
+  accessTokenHash String
+  userAgent       String?
+  ipAddress       String?
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  platformUser    PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([platformUserId, revokedAt])
+  @@map("platform_sessions")
+}
+
+model PlatformAuditLog {
+  id             String        @id @default(cuid())
+  platformUserId String?
+  action         String
+  module         String
+  entityType     String?
+  entityId       String?
+  description    String
+  metadataJson   Json?
+  ipAddress      String?
+  userAgent      String?
+  platformUser   PlatformUser? @relation(fields: [platformUserId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([platformUserId, createdAt])
+  @@map("platform_audit_logs")
+}
+
+model SaasPlan {
+  id              String                @id @default(cuid())
+  name            String                @unique
+  description     String?
+  price           Decimal               @db.Decimal(12, 2)
+  currency        Currency              @default(DOP)
+  billingInterval SaasBillingInterval
+  graceDays       Int                   @default(0)
+  maxUsers        Int?
+  maxBranches     Int?
+  modules         Json
+  isActive        Boolean               @default(true)
+  subscriptions   CompanySubscription[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([isActive, billingInterval])
+  @@map("saas_plans")
+}
+
+model CompanySubscription {
+  id                    String                    @id @default(cuid())
+  companyId             String                    @unique
+  planId                String
+  status                CompanySubscriptionStatus @default(ACTIVE)
+  startsAt              DateTime
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  nextPaymentDueAt      DateTime
+  graceDays             Int                       @default(0)
+  graceEndsAt           DateTime?
+  scheduledSuspensionAt DateTime?
+  suspendedAt           DateTime?
+  lastPaymentAt         DateTime?
+  company               Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  plan                  SaasPlan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments              SubscriptionPayment[]
+  events                SubscriptionEvent[]
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([planId, status])
+  @@index([status, nextPaymentDueAt])
+  @@map("company_subscriptions")
+}
+
+model SubscriptionPayment {
+  id                      String                    @id @default(cuid())
+  companySubscriptionId   String
+  companyId               String
+  amount                  Decimal                   @db.Decimal(12, 2)
+  currency                Currency                  @default(DOP)
+  method                  SubscriptionPaymentMethod
+  reference               String?
+  notes                   String?
+  paidAt                  DateTime
+  createdByPlatformUserId String
+  subscription            CompanySubscription       @relation(fields: [companySubscriptionId], references: [id], onDelete: Cascade)
+  company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdByPlatformUser   PlatformUser              @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
+  createdAt               DateTime                  @default(now())
+
+  @@index([companyId, paidAt(sort: Desc)])
+  @@index([companySubscriptionId, paidAt(sort: Desc)])
+  @@index([createdByPlatformUserId, createdAt])
+  @@map("subscription_payments")
+}
+
+model SubscriptionEvent {
+  id                      String                @id @default(cuid())
+  companySubscriptionId   String
+  companyId               String
+  type                    SubscriptionEventType
+  message                 String
+  metadata                Json?
+  createdByPlatformUserId String?
+  subscription            CompanySubscription   @relation(fields: [companySubscriptionId], references: [id], onDelete: Cascade)
+  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdByPlatformUser   PlatformUser?         @relation(fields: [createdByPlatformUserId], references: [id], onDelete: SetNull)
+  createdAt               DateTime              @default(now())
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([companySubscriptionId, createdAt(sort: Desc)])
+  @@map("subscription_events")
 }

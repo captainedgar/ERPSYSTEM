@@ -1,4 +1,4 @@
-import type { UserRole } from '@prisma/client';
+import type { CompanyStatus, UserRole } from '@prisma/client';
 
 export interface AuthUser {
   userId: string;
@@ -6,6 +6,7 @@ export interface AuthUser {
   branchId: string | null;
   roleId: string;
   roleCode: UserRole;
+  companyStatus: CompanyStatus;
   sessionId: string;
 }
 

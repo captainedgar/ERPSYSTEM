@@ -13,6 +13,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
+    if (!loading && user?.company.status === 'SUSPENDED') {
+      router.replace('/suspended');
+    }
   }, [loading, router, user]);
 
   if (loading || !user) {

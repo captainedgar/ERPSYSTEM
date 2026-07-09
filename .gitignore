@@ -9,3 +9,4 @@ coverage
 .turbo
 .DS_Store
 *.log
+apps/api/uploads/

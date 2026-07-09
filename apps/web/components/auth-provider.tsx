@@ -26,6 +26,11 @@ export interface AuthUser {
   name: string;
   email: string;
   companyId: string;
+  company: {
+    id: string;
+    name: string;
+    status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  };
   role: { id: string; code: string; name: string };
   branch: { id: string; code: string; name: string } | null;
 }

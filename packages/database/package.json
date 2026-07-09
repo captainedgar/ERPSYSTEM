@@ -19,7 +19,11 @@
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:validate": "dotenv -e ../../.env -- prisma validate",
-    "db:format": "dotenv -e ../../.env -- prisma format"
+    "db:format": "dotenv -e ../../.env -- prisma format",
+    "db:clear-sensitive": "dotenv -e ../../.env -- node ./scripts/clear-sensitive-data.mjs",
+    "db:seed-platform-admin": "dotenv -e ../../.env -- node ./scripts/seed-platform-admin.mjs",
+    "db:seed-saas-plans": "dotenv -e ../../.env -- node ./scripts/seed-saas-plans.mjs",
+    "billing:process-overdue": "dotenv -e ../../.env -- node ./scripts/process-overdue-billing.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0"

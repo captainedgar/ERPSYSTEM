@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'node:crypto';
-import type { User, Role } from '@prisma/client';
+import { CompanyStatus, type Role, type User } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type {
@@ -66,7 +66,7 @@ export class SessionsService {
           is: {
             status: 'ACTIVE',
             deletedAt: null,
-            company: { status: 'ACTIVE', deletedAt: null },
+            company: { deletedAt: null },
           },
         },
       },
@@ -94,12 +94,19 @@ export class SessionsService {
   }
 
   private async issueTokens(user: SessionUser, sessionId: string) {
+    const company = this.prisma.company
+      ? await this.prisma.company.findUniqueOrThrow({
+          where: { id: user.companyId },
+          select: { status: true },
+        })
+      : { status: CompanyStatus.ACTIVE };
     const claims: AuthUser = {
       userId: user.id,
       companyId: user.companyId,
       branchId: user.branchId,
       roleId: user.role.id,
       roleCode: user.role.code,
+      companyStatus: company.status,
       sessionId,
     };
     const accessOptions: JwtSignOptions = {

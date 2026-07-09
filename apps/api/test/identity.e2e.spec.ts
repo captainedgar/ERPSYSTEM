@@ -6,15 +6,27 @@ import {
   CashSessionStatus,
   CatalogStatus,
   CategoryType,
+  CompanySubscriptionStatus,
+  CompanyStatus,
   CustomerDocumentType,
   CustomerStatus,
   CustomerType,
+  ElectronicDocumentType,
+  ElectronicInvoiceStatus,
+  FiscalEnvironment,
+  FiscalProviderMode,
+  FiscalProviderStatus,
   InternalDocumentStatus,
   InternalDocumentType,
   InventoryMovementType,
   PaymentMethod,
+  PlatformRole,
+  PlatformUserStatus,
   PrismaClient,
   SaleStatus,
+  SaasBillingInterval,
+  SubscriptionEventType,
+  SubscriptionPaymentMethod,
   TaxpayerType,
   UserRole,
   type Branch,
@@ -25,6 +37,7 @@ import {
   type Service,
   type Unit,
 } from '@prisma/client';
+import { hash } from 'bcrypt';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -39,6 +52,15 @@ interface SafeUser {
   name: string;
   email: string;
   status: string;
+  company: {
+    id: string;
+    name: string;
+    legalName: string | null;
+    businessType: BusinessType;
+    status: CompanyStatus;
+    logoUrl: string | null;
+    logoUpdatedAt: string | null;
+  };
   role: { id: string; code: UserRole; name: string };
   branch: { id: string; code: string; name: string } | null;
 }
@@ -52,6 +74,17 @@ interface AuthResponse {
 interface RegisterResponse extends AuthResponse {
   company: { id: string; name: string };
   branch: Branch;
+}
+
+interface PlatformAuthResponse {
+  accessToken: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: PlatformRole;
+    status: PlatformUserStatus;
+  };
 }
 
 interface RoleResponse {
@@ -543,6 +576,675 @@ describe('Identity and multi-company isolation (e2e)', () => {
         },
       }),
     ).toBe(2);
+  });
+
+  it('manages company logos with permissions, validation and audit logs', async () => {
+    const registered = await registerCompany('logo');
+    const roles = await getRoles(registered.accessToken);
+    const admin = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.ADMIN).id,
+      registered.branch.id,
+      'logo-admin',
+    );
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'logo-cashier',
+    );
+    const adminLogin = await login(admin.email);
+    const cashierLogin = await login(cashier.email);
+
+    const anonymous = await uploadLogo(
+      undefined,
+      pngBytes(),
+      'logo.png',
+      'image/png',
+    );
+    const invalidFormat = await uploadLogo(
+      registered.accessToken,
+      new Uint8Array([1, 2, 3]),
+      'logo.svg',
+      'image/svg+xml',
+    );
+    const tooLarge = await uploadLogo(
+      registered.accessToken,
+      new Uint8Array(2 * 1024 * 1024 + 1),
+      'logo.png',
+      'image/png',
+    );
+    const ownerUpload = await uploadLogo(
+      registered.accessToken,
+      pngBytes(),
+      'logo.png',
+      'image/png',
+    );
+    const cashierRead = await http<{ logoUrl: string | null }>(
+      'GET',
+      '/companies/me/logo',
+      undefined,
+      cashierLogin.accessToken,
+    );
+    const cashierUpload = await uploadLogo(
+      cashierLogin.accessToken,
+      pngBytes(),
+      'logo.png',
+      'image/png',
+    );
+    const adminReplace = await uploadLogo(
+      adminLogin.accessToken,
+      webpBytes(),
+      'logo.webp',
+      'image/webp',
+    );
+    const deleted = await http<{ logoUrl: string | null }>(
+      'DELETE',
+      '/companies/me/logo',
+      undefined,
+      adminLogin.accessToken,
+    );
+    const company = await prisma.company.findUniqueOrThrow({
+      where: { id: registered.company.id },
+      select: { logoUrl: true, logoFileKey: true, logoUpdatedAt: true },
+    });
+    const auditActions = await prisma.auditLog.findMany({
+      where: {
+        companyId: registered.company.id,
+        action: {
+          in: [
+            'COMPANY_LOGO_UPLOADED',
+            'COMPANY_LOGO_UPDATED',
+            'COMPANY_LOGO_DELETED',
+          ],
+        },
+      },
+      select: { action: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    expect(anonymous.status).toBe(401);
+    expect(invalidFormat.status).toBe(400);
+    expect(tooLarge.status).toBe(413);
+    expect(ownerUpload.status).toBe(201);
+    expect(ownerUpload.body.logoUrl).toContain('/uploads/company-logos/');
+    expect(cashierRead.status).toBe(200);
+    expect(cashierRead.body.logoUrl).toBe(ownerUpload.body.logoUrl);
+    expect(cashierUpload.status).toBe(403);
+    expect(adminReplace.status).toBe(201);
+    expect(adminReplace.body.logoUrl).toContain('.webp');
+    expect(adminReplace.body.logoUrl).not.toBe(ownerUpload.body.logoUrl);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.logoUrl).toBeNull();
+    expect(company.logoUrl).toBeNull();
+    expect(company.logoFileKey).toBeNull();
+    expect(company.logoUpdatedAt).not.toBeNull();
+    expect(auditActions.map(({ action }) => action)).toEqual([
+      'COMPANY_LOGO_UPLOADED',
+      'COMPANY_LOGO_UPDATED',
+      'COMPANY_LOGO_DELETED',
+    ]);
+  });
+
+  it('keeps company logos isolated between companies', async () => {
+    const companyA = await registerCompany('logo-a');
+    const companyB = await registerCompany('logo-b');
+    const uploadedA = await uploadLogo(
+      companyA.accessToken,
+      pngBytes(),
+      'logo.png',
+      'image/png',
+    );
+    const logoB = await http<{ companyId: string; logoUrl: string | null }>(
+      'GET',
+      '/companies/me/logo',
+      undefined,
+      companyB.accessToken,
+    );
+
+    expect(uploadedA.status).toBe(201);
+    expect(logoB.status).toBe(200);
+    expect(logoB.body.companyId).toBe(companyB.company.id);
+    expect(logoB.body.logoUrl).toBeNull();
+  });
+
+  it('isolates platform admin access from company users and audits status changes', async () => {
+    const company = await registerCompany('platform-company');
+    const platformAdmin = await createPlatformUser(
+      'platform-super-admin@example.test',
+      PlatformRole.SUPER_ADMIN,
+    );
+    const supportAdmin = await createPlatformUser(
+      'platform-support@example.test',
+      PlatformRole.SUPPORT_ADMIN,
+    );
+
+    const companyTokenAttempt = await http<unknown>(
+      'GET',
+      '/platform/companies',
+      undefined,
+      company.accessToken,
+    );
+    const login = await platformLogin(platformAdmin.email);
+    const supportLogin = await platformLogin(supportAdmin.email);
+    const me = await http<PlatformAuthResponse['user']>(
+      'GET',
+      '/platform/auth/me',
+      undefined,
+      login.body.accessToken,
+    );
+    const companies = await http<Array<{ id: string; name: string }>>(
+      'GET',
+      '/platform/companies',
+      undefined,
+      login.body.accessToken,
+    );
+    const detail = await http<{ id: string; users?: unknown }>(
+      'GET',
+      `/platform/companies/${company.company.id}`,
+      undefined,
+      login.body.accessToken,
+    );
+    const users = await http<SafeUser[]>(
+      'GET',
+      `/platform/companies/${company.company.id}/users`,
+      undefined,
+      login.body.accessToken,
+    );
+    const supportSuspendAttempt = await http<unknown>(
+      'PATCH',
+      `/platform/companies/${company.company.id}/status`,
+      { status: CompanyStatus.SUSPENDED },
+      supportLogin.body.accessToken,
+    );
+    const suspended = await http<{ id: string; status: CompanyStatus }>(
+      'PATCH',
+      `/platform/companies/${company.company.id}/status`,
+      { status: CompanyStatus.SUSPENDED },
+      login.body.accessToken,
+    );
+    const blockedCompanyRequest = await http<unknown>(
+      'GET',
+      '/companies/me',
+      undefined,
+      company.accessToken,
+    );
+    const reactivated = await http<{ id: string; status: CompanyStatus }>(
+      'PATCH',
+      `/platform/companies/${company.company.id}/status`,
+      { status: CompanyStatus.ACTIVE },
+      login.body.accessToken,
+    );
+    const companyRequestAfterReactivate = await http<{ id: string }>(
+      'GET',
+      '/companies/me',
+      undefined,
+      company.accessToken,
+    );
+    const audit = await http<Array<{ action: string }>>(
+      'GET',
+      '/platform/audit-logs',
+      undefined,
+      login.body.accessToken,
+    );
+
+    expect(companyTokenAttempt.status).toBe(401);
+    expect(login.status).toBe(201);
+    expect(me.status).toBe(200);
+    expect(companies.status).toBe(200);
+    expect(companies.body.map(({ id }) => id)).toContain(company.company.id);
+    expect(detail.status).toBe(200);
+    expect(detail.body.id).toBe(company.company.id);
+    expect(users.status).toBe(200);
+    expect(users.body).toHaveLength(1);
+    expect(supportSuspendAttempt.status).toBe(403);
+    expect(suspended.status).toBe(200);
+    expect(suspended.body.status).toBe(CompanyStatus.SUSPENDED);
+    expect(blockedCompanyRequest.status).toBe(403);
+    expect(reactivated.status).toBe(200);
+    expect(reactivated.body.status).toBe(CompanyStatus.ACTIVE);
+    expect(companyRequestAfterReactivate.status).toBe(200);
+    expect(audit.status).toBe(200);
+    expect(audit.body.map(({ action }) => action)).toEqual(
+      expect.arrayContaining([
+        'PLATFORM_LOGIN',
+        'PLATFORM_COMPANY_SUSPENDED',
+        'PLATFORM_COMPANY_REACTIVATED',
+      ]),
+    );
+    expectNoSensitiveFields([
+      login.body,
+      me.body,
+      companies.body,
+      detail.body,
+      users.body,
+    ]);
+  });
+
+  it('manages SaaS plans, subscriptions and manual payments from platform billing', async () => {
+    const company = await registerCompany('billing-company');
+    const platformAdmin = await createPlatformUser(
+      'platform-billing-super@example.test',
+      PlatformRole.SUPER_ADMIN,
+    );
+    const supportAdmin = await createPlatformUser(
+      'platform-billing-support@example.test',
+      PlatformRole.SUPPORT_ADMIN,
+    );
+
+    const companyTokenAttempt = await http<unknown>(
+      'GET',
+      '/platform/plans',
+      undefined,
+      company.accessToken,
+    );
+    const login = await platformLogin(platformAdmin.email);
+    const supportLogin = await platformLogin(supportAdmin.email);
+    const supportCreateAttempt = await http<unknown>(
+      'POST',
+      '/platform/plans',
+      {
+        name: 'Support Blocked',
+        price: 1000,
+        currency: 'DOP',
+        billingInterval: SaasBillingInterval.MONTHLY,
+        graceDays: 5,
+        modules: { pos: true },
+      },
+      supportLogin.body.accessToken,
+    );
+    const createdPlan = await http<{
+      id: string;
+      name: string;
+      isActive: boolean;
+    }>(
+      'POST',
+      '/platform/plans',
+      {
+        name: 'Plan Billing E2E',
+        description: 'Manual billing plan',
+        price: 1500,
+        currency: 'DOP',
+        billingInterval: SaasBillingInterval.MONTHLY,
+        graceDays: 7,
+        maxUsers: 10,
+        modules: { pos: true, fiscalMock: true },
+      },
+      login.body.accessToken,
+    );
+    const plans = await http<Array<{ id: string }>>(
+      'GET',
+      '/platform/plans',
+      undefined,
+      login.body.accessToken,
+    );
+    const updatedPlan = await http<{ id: string; name: string }>(
+      'PATCH',
+      `/platform/plans/${createdPlan.body.id}`,
+      { name: 'Plan Billing E2E Pro', price: 1750 },
+      login.body.accessToken,
+    );
+    const disabledPlan = await http<{ isActive: boolean }>(
+      'PATCH',
+      `/platform/plans/${createdPlan.body.id}/status`,
+      { isActive: false },
+      login.body.accessToken,
+    );
+    const enabledPlan = await http<{ isActive: boolean }>(
+      'PATCH',
+      `/platform/plans/${createdPlan.body.id}/status`,
+      { isActive: true },
+      login.body.accessToken,
+    );
+    const assigned = await http<{
+      id: string;
+      status: CompanySubscriptionStatus;
+      planId: string;
+      nextPaymentDueAt: string;
+    }>(
+      'PUT',
+      `/platform/companies/${company.company.id}/subscription`,
+      {
+        planId: createdPlan.body.id,
+        status: CompanySubscriptionStatus.TRIAL,
+        nextPaymentDueAt: '2026-08-08',
+      },
+      login.body.accessToken,
+    );
+    const subscription = await http<{ id: string; planId: string }>(
+      'GET',
+      `/platform/companies/${company.company.id}/subscription`,
+      undefined,
+      login.body.accessToken,
+    );
+    const supportPaymentAttempt = await http<unknown>(
+      'POST',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      {
+        amount: 1750,
+        currency: 'DOP',
+        method: SubscriptionPaymentMethod.BANK_TRANSFER,
+        paidAt: '2026-07-08',
+      },
+      supportLogin.body.accessToken,
+    );
+    const payment = await http<{
+      payment: { id: string; amount: string };
+      subscription: {
+        id: string;
+        status: CompanySubscriptionStatus;
+        nextPaymentDueAt: string;
+        lastPaymentAt: string;
+      };
+    }>(
+      'POST',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      {
+        amount: 1750,
+        currency: 'DOP',
+        method: SubscriptionPaymentMethod.BANK_TRANSFER,
+        reference: 'TX-001',
+        paidAt: '2026-07-08',
+        nextPaymentDueAt: '2026-09-08',
+      },
+      login.body.accessToken,
+    );
+    const companyPayments = await http<Array<{ id: string }>>(
+      'GET',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      undefined,
+      login.body.accessToken,
+    );
+    const events = await http<Array<{ type: string }>>(
+      'GET',
+      `/platform/companies/${company.company.id}/subscription/events`,
+      undefined,
+      login.body.accessToken,
+    );
+    const billingPayments = await http<Array<{ id: string }>>(
+      'GET',
+      '/platform/billing/payments',
+      undefined,
+      login.body.accessToken,
+    );
+    const billingSubscriptions = await http<Array<{ id: string }>>(
+      'GET',
+      '/platform/billing/subscriptions',
+      undefined,
+      login.body.accessToken,
+    );
+    const audit = await http<Array<{ action: string }>>(
+      'GET',
+      '/platform/audit-logs',
+      undefined,
+      login.body.accessToken,
+    );
+
+    expect(companyTokenAttempt.status).toBe(401);
+    expect(supportCreateAttempt.status).toBe(403);
+    expect(createdPlan.status).toBe(201);
+    expect(createdPlan.body.isActive).toBe(true);
+    expect(plans.status).toBe(200);
+    expect(plans.body.map(({ id }) => id)).toContain(createdPlan.body.id);
+    expect(updatedPlan.status).toBe(200);
+    expect(updatedPlan.body.name).toBe('Plan Billing E2E Pro');
+    expect(disabledPlan.body.isActive).toBe(false);
+    expect(enabledPlan.body.isActive).toBe(true);
+    expect(assigned.status).toBe(200);
+    expect(assigned.body.planId).toBe(createdPlan.body.id);
+    expect(subscription.body.id).toBe(assigned.body.id);
+    expect(supportPaymentAttempt.status).toBe(403);
+    expect(payment.status).toBe(201);
+    expect(payment.body.subscription.status).toBe(
+      CompanySubscriptionStatus.ACTIVE,
+    );
+    expect(payment.body.subscription.nextPaymentDueAt).toContain('2026-09-08');
+    expect(companyPayments.body.map(({ id }) => id)).toEqual([
+      payment.body.payment.id,
+    ]);
+    expect(events.body.map(({ type }) => type)).toEqual(
+      expect.arrayContaining([
+        'SUBSCRIPTION_CREATED',
+        'PAYMENT_REGISTERED',
+        'NEXT_PAYMENT_DATE_UPDATED',
+      ]),
+    );
+    expect(billingPayments.body.map(({ id }) => id)).toContain(
+      payment.body.payment.id,
+    );
+    expect(billingSubscriptions.body.map(({ id }) => id)).toContain(
+      assigned.body.id,
+    );
+    expect(audit.body.map(({ action }) => action)).toEqual(
+      expect.arrayContaining([
+        'SAAS_PLAN_CREATED',
+        'SAAS_PLAN_UPDATED',
+        'SAAS_PLAN_DISABLED',
+        'SAAS_PLAN_ENABLED',
+        'COMPANY_SUBSCRIPTION_ASSIGNED',
+        'SUBSCRIPTION_PAYMENT_REGISTERED',
+      ]),
+    );
+    expectNoSensitiveFields([
+      createdPlan.body,
+      plans.body,
+      assigned.body,
+      payment.body,
+      companyPayments.body,
+      events.body,
+      billingPayments.body,
+      billingSubscriptions.body,
+    ]);
+  });
+
+  it('processes overdue subscriptions, blocks suspended companies and reactivates after payment', async () => {
+    const company = await registerCompany('billing-overdue-company');
+    const platformAdmin = await createPlatformUser(
+      'platform-overdue-super@example.test',
+      PlatformRole.SUPER_ADMIN,
+    );
+    const supportAdmin = await createPlatformUser(
+      'platform-overdue-support@example.test',
+      PlatformRole.SUPPORT_ADMIN,
+    );
+    const plan = await prisma.saasPlan.create({
+      data: {
+        name: 'Plan Overdue E2E',
+        price: 1200,
+        currency: 'DOP',
+        billingInterval: SaasBillingInterval.MONTHLY,
+        graceDays: 5,
+        modules: { pos: true },
+      },
+    });
+    const subscription = await prisma.companySubscription.create({
+      data: {
+        companyId: company.company.id,
+        planId: plan.id,
+        status: CompanySubscriptionStatus.ACTIVE,
+        startsAt: new Date('2026-05-01T00:00:00.000Z'),
+        currentPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
+        nextPaymentDueAt: new Date('2026-06-01T00:00:00.000Z'),
+        graceDays: 5,
+      },
+    });
+    const login = await platformLogin(platformAdmin.email);
+    const supportLogin = await platformLogin(supportAdmin.email);
+
+    const companyTokenAttempt = await http<unknown>(
+      'POST',
+      '/platform/billing/process-overdue',
+      undefined,
+      company.accessToken,
+    );
+    const supportAttempt = await http<unknown>(
+      'POST',
+      '/platform/billing/process-overdue',
+      undefined,
+      supportLogin.body.accessToken,
+    );
+    const graceRun = await http<{
+      movedToGracePeriod: number;
+      companiesSuspended: number;
+      noActionRequired: number;
+    }>(
+      'POST',
+      '/platform/billing/process-overdue',
+      undefined,
+      login.body.accessToken,
+    );
+    const graceSubscription =
+      await prisma.companySubscription.findUniqueOrThrow({
+        where: { id: subscription.id },
+      });
+    const secondRun = await http<{
+      movedToGracePeriod: number;
+      companiesSuspended: number;
+      noActionRequired: number;
+    }>(
+      'POST',
+      '/platform/billing/process-overdue',
+      undefined,
+      login.body.accessToken,
+    );
+    const graceEvents = await prisma.subscriptionEvent.count({
+      where: {
+        companySubscriptionId: subscription.id,
+        type: SubscriptionEventType.SUBSCRIPTION_GRACE_STARTED,
+      },
+    });
+
+    const suspensionRun = await http<{
+      movedToGracePeriod: number;
+      companiesSuspended: number;
+      noActionRequired: number;
+    }>(
+      'POST',
+      '/platform/billing/process-overdue',
+      undefined,
+      login.body.accessToken,
+    );
+    const suspendedSubscription =
+      await prisma.companySubscription.findUniqueOrThrow({
+        where: { id: subscription.id },
+      });
+    const suspendedCompany = await prisma.company.findUniqueOrThrow({
+      where: { id: company.company.id },
+    });
+    const suspendedMe = await http<AuthResponse['user']>(
+      'GET',
+      '/auth/me',
+      undefined,
+      company.accessToken,
+    );
+    const blockedPos = await http<unknown>(
+      'GET',
+      '/pos/search-items',
+      undefined,
+      company.accessToken,
+    );
+    const blockedSale = await http<unknown>(
+      'POST',
+      '/sales',
+      {},
+      company.accessToken,
+    );
+    const reactivationPayment = await http<{
+      subscription: { status: CompanySubscriptionStatus; suspendedAt: null };
+    }>(
+      'POST',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      {
+        amount: 1200,
+        currency: 'DOP',
+        method: SubscriptionPaymentMethod.BANK_TRANSFER,
+        paidAt: '2026-07-09',
+        nextPaymentDueAt: '2026-08-09',
+      },
+      login.body.accessToken,
+    );
+    const reactivatedCompany = await prisma.company.findUniqueOrThrow({
+      where: { id: company.company.id },
+    });
+    const allowedPos = await http<unknown>(
+      'GET',
+      '/pos/search-items',
+      undefined,
+      company.accessToken,
+    );
+    const audit = await prisma.platformAuditLog.findMany({
+      where: {
+        action: {
+          in: [
+            'SUBSCRIPTION_GRACE_STARTED',
+            'COMPANY_AUTO_SUSPENDED_FOR_NON_PAYMENT',
+            'COMPANY_REACTIVATED_AFTER_PAYMENT',
+            'BILLING_OVERDUE_PROCESS_RUN',
+          ],
+        },
+      },
+    });
+    const events = await prisma.subscriptionEvent.findMany({
+      where: { companySubscriptionId: subscription.id },
+    });
+
+    expect(companyTokenAttempt.status).toBe(401);
+    expect(supportAttempt.status).toBe(403);
+    expect(graceRun.body.movedToGracePeriod).toBe(1);
+    expect(graceRun.body.companiesSuspended).toBe(0);
+    expect(graceSubscription.status).toBe(
+      CompanySubscriptionStatus.GRACE_PERIOD,
+    );
+    expect(graceSubscription.graceEndsAt?.toISOString()).toBe(
+      '2026-06-06T00:00:00.000Z',
+    );
+    expect(graceSubscription.scheduledSuspensionAt?.toISOString()).toBe(
+      '2026-06-06T00:00:00.000Z',
+    );
+    expect(secondRun.body.movedToGracePeriod).toBe(0);
+    expect(secondRun.body.companiesSuspended).toBe(1);
+    expect(graceEvents).toBe(1);
+    expect(suspensionRun.body.companiesSuspended).toBe(0);
+    expect(suspendedSubscription.status).toBe(
+      CompanySubscriptionStatus.SUSPENDED,
+    );
+    expect(suspendedSubscription.suspendedAt).toBeInstanceOf(Date);
+    expect(suspendedCompany.status).toBe(CompanyStatus.SUSPENDED);
+    expect(suspendedMe.status).toBe(200);
+    expect(suspendedMe.body.company.status).toBe(CompanyStatus.SUSPENDED);
+    expect(blockedPos.status).toBe(403);
+    expect(blockedSale.status).toBe(403);
+    expect(reactivationPayment.status).toBe(201);
+    expect(reactivationPayment.body.subscription.status).toBe(
+      CompanySubscriptionStatus.ACTIVE,
+    );
+    expect(reactivationPayment.body.subscription.suspendedAt).toBeNull();
+    expect(reactivatedCompany.status).toBe(CompanyStatus.ACTIVE);
+    expect(allowedPos.status).toBe(200);
+    expect(events.map(({ type }) => type)).toEqual(
+      expect.arrayContaining([
+        SubscriptionEventType.SUBSCRIPTION_GRACE_STARTED,
+        SubscriptionEventType.COMPANY_AUTO_SUSPENDED_FOR_NON_PAYMENT,
+        SubscriptionEventType.COMPANY_REACTIVATED_AFTER_PAYMENT,
+        SubscriptionEventType.BILLING_OVERDUE_PROCESS_RUN,
+      ]),
+    );
+    expect(audit.map(({ action }) => action)).toEqual(
+      expect.arrayContaining([
+        'SUBSCRIPTION_GRACE_STARTED',
+        'COMPANY_AUTO_SUSPENDED_FOR_NON_PAYMENT',
+        'COMPANY_REACTIVATED_AFTER_PAYMENT',
+        'BILLING_OVERDUE_PROCESS_RUN',
+      ]),
+    );
+    expectNoSensitiveFields([
+      graceRun.body,
+      secondRun.body,
+      suspensionRun.body,
+      suspendedMe.body,
+      reactivationPayment.body,
+    ]);
   });
 
   it('applies templates and completes onboarding without crossing companies', async () => {
@@ -2112,6 +2814,516 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(warehouseVoid.status).toBe(403);
   });
 
+  it('configures fiscal sandbox and enforces fiscal role permissions', async () => {
+    const registered = await registerCompany('fiscal-settings');
+    const anonymous = await http<unknown>('GET', '/fiscal/settings');
+    const ownerSettings = await http<{
+      environment: FiscalEnvironment;
+      providerMode: FiscalProviderMode;
+      enabled: boolean;
+    }>('GET', '/fiscal/settings', undefined, registered.accessToken);
+    const ownerUpdate = await http<{ legalName: string; enabled: boolean }>(
+      'PUT',
+      '/fiscal/settings',
+      {
+        legalName: 'Comercia Sandbox SRL',
+        commercialName: 'Comercia Sandbox',
+        rnc: '131000000',
+        enabled: true,
+      },
+      registered.accessToken,
+    );
+    const productionAttempt = await http<unknown>(
+      'PUT',
+      '/fiscal/settings',
+      { environment: FiscalEnvironment.PRODUCTION },
+      registered.accessToken,
+    );
+    const roles = await getRoles(registered.accessToken);
+    const [cashier, accounting, warehouse] = await Promise.all([
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        registered.branch.id,
+        'fiscal-settings-cashier',
+      ),
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        registered.branch.id,
+        'fiscal-settings-accounting',
+      ),
+      createUser(
+        registered.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        registered.branch.id,
+        'fiscal-settings-warehouse',
+      ),
+    ]);
+    const [cashierSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const cashierSettings = await http<unknown>(
+      'GET',
+      '/fiscal/settings',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const accountingUpdate = await http<{ legalName: string }>(
+      'PUT',
+      '/fiscal/settings',
+      { legalName: 'Contabilidad Sandbox' },
+      accountingSession.accessToken,
+    );
+    const mockProvider = await http<{
+      id: string;
+      code: string;
+      mode: FiscalProviderMode;
+      status: FiscalProviderStatus;
+    }>(
+      'POST',
+      '/fiscal/providers/mock/enable',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const providerTest = await http<{ reachable: boolean; provider: string }>(
+      'POST',
+      `/fiscal/providers/${mockProvider.body.id}/test-connection`,
+      undefined,
+      accountingSession.accessToken,
+    );
+    const providerList = await http<Array<{ id: string }>>(
+      'GET',
+      '/fiscal/providers',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const cashierProviders = await http<unknown>(
+      'GET',
+      '/fiscal/providers',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const warehouseInvoices = await http<unknown>(
+      'GET',
+      '/fiscal/electronic-invoices',
+      undefined,
+      warehouseSession.accessToken,
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(ownerSettings.status).toBe(200);
+    expect(ownerSettings.body.environment).toBe(FiscalEnvironment.SANDBOX);
+    expect(ownerSettings.body.providerMode).toBe(FiscalProviderMode.MOCK);
+    expect(ownerSettings.body.enabled).toBe(false);
+    expect(ownerUpdate.status).toBe(200);
+    expect(ownerUpdate.body.legalName).toBe('Comercia Sandbox SRL');
+    expect(ownerUpdate.body.enabled).toBe(true);
+    expect(productionAttempt.status).toBe(400);
+    expect(cashierSettings.status).toBe(403);
+    expect(accountingUpdate.status).toBe(200);
+    expect(accountingUpdate.body.legalName).toBe('Contabilidad Sandbox');
+    expect(mockProvider.status).toBe(201);
+    expect(mockProvider.body.code).toBe('MOCK_SANDBOX');
+    expect(mockProvider.body.mode).toBe(FiscalProviderMode.MOCK);
+    expect(mockProvider.body.status).toBe(FiscalProviderStatus.ACTIVE);
+    expect(providerTest.status).toBe(201);
+    expect(providerTest.body.reachable).toBe(true);
+    expect(providerTest.body.provider).toBe('MOCK');
+    expect(providerList.status).toBe(200);
+    expect(providerList.body.map(({ id }) => id)).toContain(
+      mockProvider.body.id,
+    );
+    expect(cashierProviders.status).toBe(403);
+    expect(warehouseInvoices.status).toBe(403);
+  });
+
+  it('creates, sends, retries, audits and isolates fiscal mock documents', async () => {
+    const companyA = await registerCompany('fiscal-documents-a');
+    const companyB = await registerCompany('fiscal-documents-b');
+    await Promise.all([
+      http<SettingsResponse>(
+        'PATCH',
+        '/business-settings',
+        { requireOpenCashForSales: false },
+        companyA.accessToken,
+      ),
+      http<SettingsResponse>(
+        'PATCH',
+        '/business-settings',
+        { requireOpenCashForSales: false },
+        companyB.accessToken,
+      ),
+      http<unknown>(
+        'POST',
+        '/fiscal/providers/mock/enable',
+        undefined,
+        companyA.accessToken,
+      ),
+      http<unknown>(
+        'POST',
+        '/fiscal/providers/mock/enable',
+        undefined,
+        companyB.accessToken,
+      ),
+    ]);
+    const [productA, serviceB] = await Promise.all([
+      http<Product>(
+        'POST',
+        '/products',
+        {
+          name: 'Producto fiscal mock',
+          price: 100,
+          taxRate: 0,
+          stock: 10,
+          trackInventory: true,
+        },
+        companyA.accessToken,
+      ),
+      http<Service>(
+        'POST',
+        '/services',
+        { name: 'Servicio fiscal externo', price: 35, taxRate: 0 },
+        companyB.accessToken,
+      ),
+    ]);
+    const saleA = await http<{ id: string; status: SaleStatus }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.PRODUCT, productA.body.id, 2, 200),
+      companyA.accessToken,
+    );
+    const saleB = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.SERVICE, serviceB.body.id, 1, 35),
+      companyB.accessToken,
+    );
+    const internalDocument = await http<{ id: string }>(
+      'POST',
+      `/internal-documents/from-sale/${saleA.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyA.accessToken,
+    );
+    const foreignInternalDocument = await http<{ id: string }>(
+      'POST',
+      `/internal-documents/from-sale/${saleB.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyB.accessToken,
+    );
+    const productAfterSale = await prisma.product.findUniqueOrThrow({
+      where: { id: productA.body.id },
+    });
+    const inventoryAfterSale = await prisma.inventoryMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const cashMovementsAfterSale = await prisma.cashMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+
+    const anonymousDraft = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+    );
+    const saleDraft = await http<{
+      id: string;
+      status: ElectronicInvoiceStatus;
+      documentType: ElectronicDocumentType;
+      payload: { source: string; sandbox: boolean; totals: { total: string } };
+    }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const internalDraft = await http<{
+      id: string;
+      internalDocumentId: string;
+    }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-internal-document/${internalDocument.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const foreignSaleDraft = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleB.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const foreignDocumentDraft = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/from-internal-document/${foreignInternalDocument.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const rejectedDraft = await http<{ id: string }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const failedDraft = await http<{ id: string }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const pendingDraft = await http<{ id: string }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      companyA.accessToken,
+    );
+    const accepted = await http<{
+      id: string;
+      status: ElectronicInvoiceStatus;
+      providerTrackId: string | null;
+      fiscalNumber: string | null;
+    }>(
+      'POST',
+      `/fiscal/electronic-invoices/${saleDraft.body.id}/send`,
+      { mockOutcome: 'ACCEPTED' },
+      companyA.accessToken,
+    );
+    const rejected = await http<{ status: ElectronicInvoiceStatus }>(
+      'POST',
+      `/fiscal/electronic-invoices/${rejectedDraft.body.id}/send`,
+      { mockOutcome: 'REJECTED' },
+      companyA.accessToken,
+    );
+    const failed = await http<{ status: ElectronicInvoiceStatus }>(
+      'POST',
+      `/fiscal/electronic-invoices/${failedDraft.body.id}/send`,
+      { mockOutcome: 'FAILED' },
+      companyA.accessToken,
+    );
+    const pending = await http<{ status: ElectronicInvoiceStatus }>(
+      'POST',
+      `/fiscal/electronic-invoices/${pendingDraft.body.id}/send`,
+      { mockOutcome: 'PENDING' },
+      companyA.accessToken,
+    );
+    const checked = await http<{ status: ElectronicInvoiceStatus }>(
+      'GET',
+      `/fiscal/electronic-invoices/${pendingDraft.body.id}/status`,
+      undefined,
+      companyA.accessToken,
+    );
+    const retried = await http<{ status: ElectronicInvoiceStatus }>(
+      'POST',
+      `/fiscal/electronic-invoices/${failedDraft.body.id}/retry`,
+      { mockOutcome: 'ACCEPTED' },
+      companyA.accessToken,
+    );
+    const repeatedRetry = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/${failedDraft.body.id}/retry`,
+      { mockOutcome: 'ACCEPTED' },
+      companyA.accessToken,
+    );
+    const listA = await http<{
+      items: Array<{ id: string; companyId: string }>;
+      total: number;
+    }>('GET', '/fiscal/electronic-invoices', undefined, companyA.accessToken);
+    const detail = await http<{
+      id: string;
+      companyId: string;
+      sale: { id: string };
+      payload: { sandbox: boolean };
+    }>(
+      'GET',
+      `/fiscal/electronic-invoices/${saleDraft.body.id}`,
+      undefined,
+      companyA.accessToken,
+    );
+    const crossDetail = await http<unknown>(
+      'GET',
+      `/fiscal/electronic-invoices/${saleDraft.body.id}`,
+      undefined,
+      companyB.accessToken,
+    );
+    const events = await http<Array<{ eventType: string }>>(
+      'GET',
+      `/fiscal/electronic-invoices/${failedDraft.body.id}/events`,
+      undefined,
+      companyA.accessToken,
+    );
+    const errors = await http<Array<{ code: string }>>(
+      'GET',
+      `/fiscal/electronic-invoices/${failedDraft.body.id}/errors`,
+      undefined,
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, accounting, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'fiscal-documents-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        companyA.branch.id,
+        'fiscal-documents-accounting',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'fiscal-documents-warehouse',
+      ),
+    ]);
+    const [cashierSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const cashierList = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/fiscal/electronic-invoices',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const cashierCreate = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      cashierSession.accessToken,
+    );
+    const accountingDraft = await http<{ id: string }>(
+      'POST',
+      `/fiscal/electronic-invoices/from-sale/${saleA.body.id}`,
+      { documentType: ElectronicDocumentType.INTERNAL_TEST },
+      accountingSession.accessToken,
+    );
+    const accountingSend = await http<{ status: ElectronicInvoiceStatus }>(
+      'POST',
+      `/fiscal/electronic-invoices/${accountingDraft.body.id}/send`,
+      { mockOutcome: 'ACCEPTED' },
+      accountingSession.accessToken,
+    );
+    const warehouseList = await http<unknown>(
+      'GET',
+      '/fiscal/electronic-invoices',
+      undefined,
+      warehouseSession.accessToken,
+    );
+    const warehouseSend = await http<unknown>(
+      'POST',
+      `/fiscal/electronic-invoices/${saleDraft.body.id}/send`,
+      { mockOutcome: 'ACCEPTED' },
+      warehouseSession.accessToken,
+    );
+    const saleAfterFiscal = await prisma.sale.findUniqueOrThrow({
+      where: { id: saleA.body.id },
+    });
+    const productAfterFiscal = await prisma.product.findUniqueOrThrow({
+      where: { id: productA.body.id },
+    });
+    const inventoryAfterFiscal = await prisma.inventoryMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const cashMovementsAfterFiscal = await prisma.cashMovement.count({
+      where: { companyId: companyA.company.id },
+    });
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: { companyId: companyA.company.id, module: 'fiscal' },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(anonymousDraft.status).toBe(401);
+    expect(saleDraft.status).toBe(201);
+    expect(saleDraft.body.status).toBe(ElectronicInvoiceStatus.DRAFT);
+    expect(saleDraft.body.documentType).toBe(
+      ElectronicDocumentType.INTERNAL_TEST,
+    );
+    expect(saleDraft.body.payload.source).toBe('sale');
+    expect(saleDraft.body.payload.sandbox).toBe(true);
+    expect(Number(saleDraft.body.payload.totals.total)).toBe(200);
+    expect(internalDraft.status).toBe(201);
+    expect(internalDraft.body.internalDocumentId).toBe(
+      internalDocument.body.id,
+    );
+    expect(foreignSaleDraft.status).toBe(404);
+    expect(foreignDocumentDraft.status).toBe(404);
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.status).toBe(ElectronicInvoiceStatus.ACCEPTED);
+    expect(accepted.body.providerTrackId).toEqual(expect.any(String));
+    expect(accepted.body.fiscalNumber).toContain('TEST-');
+    expect(rejected.status).toBe(201);
+    expect(rejected.body.status).toBe(ElectronicInvoiceStatus.REJECTED);
+    expect(failed.status).toBe(201);
+    expect(failed.body.status).toBe(ElectronicInvoiceStatus.FAILED);
+    expect(pending.status).toBe(201);
+    expect(pending.body.status).toBe(ElectronicInvoiceStatus.PENDING_PROVIDER);
+    expect(checked.status).toBe(200);
+    expect(checked.body.status).toBe(ElectronicInvoiceStatus.ACCEPTED);
+    expect(retried.status).toBe(201);
+    expect(retried.body.status).toBe(ElectronicInvoiceStatus.ACCEPTED);
+    expect(repeatedRetry.status).toBe(400);
+    expect(listA.status).toBe(200);
+    expect(listA.body.total).toBeGreaterThanOrEqual(5);
+    expect(
+      listA.body.items.every(
+        ({ companyId }) => companyId === companyA.company.id,
+      ),
+    ).toBe(true);
+    expect(detail.status).toBe(200);
+    expect(detail.body.companyId).toBe(companyA.company.id);
+    expect(detail.body.sale.id).toBe(saleA.body.id);
+    expect(detail.body.payload.sandbox).toBe(true);
+    expect(crossDetail.status).toBe(404);
+    expect(events.status).toBe(200);
+    expect(events.body.map(({ eventType }) => eventType)).toEqual(
+      expect.arrayContaining([
+        'ELECTRONIC_INVOICE_SENT',
+        'ELECTRONIC_INVOICE_FAILED',
+        'FISCAL_ERROR_REGISTERED',
+        'ELECTRONIC_INVOICE_RETRIED',
+      ]),
+    );
+    expect(errors.status).toBe(200);
+    expect(errors.body.map(({ code }) => code)).toContain(
+      'MOCK_PROVIDER_FAILED',
+    );
+    expect(cashierList.status).toBe(200);
+    expect(cashierList.body.items.length).toBeGreaterThan(0);
+    expect(cashierCreate.status).toBe(403);
+    expect(accountingDraft.status).toBe(201);
+    expect(accountingSend.status).toBe(201);
+    expect(accountingSend.body.status).toBe(ElectronicInvoiceStatus.ACCEPTED);
+    expect(warehouseList.status).toBe(403);
+    expect(warehouseSend.status).toBe(403);
+    expect(saleAfterFiscal.status).toBe(SaleStatus.COMPLETED);
+    expect(Number(productAfterSale.stock)).toBe(8);
+    expect(Number(productAfterFiscal.stock)).toBe(8);
+    expect(inventoryAfterFiscal).toBe(inventoryAfterSale);
+    expect(cashMovementsAfterFiscal).toBe(cashMovementsAfterSale);
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'FISCAL_PROVIDER_ENABLED',
+        'ELECTRONIC_INVOICE_DRAFT_CREATED',
+        'ELECTRONIC_INVOICE_SENT',
+        'ELECTRONIC_INVOICE_ACCEPTED',
+        'ELECTRONIC_INVOICE_REJECTED',
+        'ELECTRONIC_INVOICE_FAILED',
+        'ELECTRONIC_INVOICE_RETRIED',
+        'FISCAL_STATUS_CHECKED',
+        'FISCAL_ERROR_REGISTERED',
+      ]),
+    );
+  });
+
   it('opens, moves, reconciles and closes cash with sale and cancellation movements', async () => {
     const registered = await registerCompany('cash-lifecycle');
     const anonymous = await http<unknown>('GET', '/cash/current');
@@ -2919,8 +4131,21 @@ async function dropTestSchema() {
 
 async function resetDatabase() {
   await prisma.$transaction([
+    prisma.subscriptionEvent.deleteMany(),
+    prisma.subscriptionPayment.deleteMany(),
+    prisma.companySubscription.deleteMany(),
+    prisma.saasPlan.deleteMany(),
+    prisma.platformAuditLog.deleteMany(),
+    prisma.platformSession.deleteMany(),
+    prisma.platformUser.deleteMany(),
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
+    prisma.fiscalError.deleteMany(),
+    prisma.electronicInvoiceEvent.deleteMany(),
+    prisma.electronicInvoice.deleteMany(),
+    prisma.fiscalProviderCredential.deleteMany(),
+    prisma.fiscalSettings.deleteMany(),
+    prisma.fiscalProvider.deleteMany(),
     prisma.cashMovement.deleteMany(),
     prisma.payment.deleteMany(),
     prisma.internalDocumentItem.deleteMany(),
@@ -3023,6 +4248,32 @@ async function registerCompany(label: string) {
   return response.body;
 }
 
+async function createPlatformUser(email: string, role: PlatformRole) {
+  return prisma.platformUser.create({
+    data: {
+      email,
+      name: `Platform ${role}`,
+      passwordHash: await hash(TEST_PASSWORD, 4),
+      role,
+      status: PlatformUserStatus.ACTIVE,
+    },
+    select: { id: true, email: true, role: true },
+  });
+}
+
+async function platformLogin(email: string) {
+  const response = await http<PlatformAuthResponse>(
+    'POST',
+    '/platform/auth/login',
+    {
+      email,
+      password: TEST_PASSWORD,
+    },
+  );
+  expectNoSensitiveFields(response.body);
+  return response;
+}
+
 async function getRoles(accessToken: string) {
   const response = await http<RoleResponse[]>(
     'GET',
@@ -3094,6 +4345,48 @@ async function http<T>(
   const text = await response.text();
   const parsed: unknown = text ? JSON.parse(text) : undefined;
   return { status: response.status, body: parsed as T };
+}
+
+async function uploadLogo(
+  accessToken: string | undefined,
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+) {
+  const formData = new FormData();
+  formData.set('logo', new Blob([bytes], { type: mimeType }), fileName);
+  const headers = new Headers();
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const response = await fetch(`${apiBaseUrl}/companies/me/logo`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  const text = await response.text();
+  const parsed: unknown = text ? JSON.parse(text) : undefined;
+  return {
+    status: response.status,
+    body: parsed as {
+      companyId: string;
+      logoUrl: string | null;
+      logoFileKey: string | null;
+      logoUpdatedAt: string | null;
+    },
+  };
+}
+
+function pngBytes() {
+  return new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52,
+  ]);
+}
+
+function webpBytes() {
+  return new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, 0x1a, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    0x56, 0x50, 0x38, 0x20,
+  ]);
 }
 
 function expectNoSensitiveFields(value: unknown) {
