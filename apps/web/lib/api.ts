@@ -55,7 +55,9 @@ export async function apiRequest<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(init.headers);
-  if (!headers.has('Content-Type') && init.body !== undefined) {
+  const isFormData =
+    typeof FormData !== 'undefined' && init.body instanceof FormData;
+  if (!headers.has('Content-Type') && init.body !== undefined && !isFormData) {
     headers.set('Content-Type', 'application/json');
   }
   const accessToken = getStoredAccessToken();
@@ -103,6 +105,12 @@ export async function apiRequest<T>(
     );
   }
   return response.json() as Promise<T>;
+}
+
+export function toApiAssetUrl(path: string | null | undefined) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_URL}${path}`;
 }
 
 async function refreshAccessToken() {

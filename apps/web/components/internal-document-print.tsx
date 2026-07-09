@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { CompanyLogo } from '@/components/company-logo';
 import { currency } from '@/components/sales-manager';
 import {
   getInternalDocumentPrintData,
@@ -110,17 +111,24 @@ export function InternalDocumentPrint({ id }: { id: string }) {
       <article className="mx-auto max-w-4xl bg-white p-8 shadow-xl print:max-w-none print:p-0 print:shadow-none">
         <header className="border-b-2 border-slate-900 pb-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">
-                {data.company.legalName || data.company.name}
-              </h1>
-              {data.company.rncOrCedula && (
-                <p className="mt-1 text-sm">
-                  RNC/Cedula: {data.company.rncOrCedula}
-                </p>
-              )}
-              <p className="mt-1 text-sm">{data.company.address}</p>
-              <p className="text-sm">{data.company.phone}</p>
+            <div className="flex gap-4">
+              <CompanyLogo
+                logoUrl={data.company.logoUrl}
+                name={data.company.name}
+                size="md"
+              />
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {data.company.legalName || data.company.name}
+                </h1>
+                {data.company.rncOrCedula && (
+                  <p className="mt-1 text-sm">
+                    RNC/Cedula: {data.company.rncOrCedula}
+                  </p>
+                )}
+                <p className="mt-1 text-sm">{data.company.address}</p>
+                <p className="text-sm">{data.company.phone}</p>
+              </div>
             </div>
             <div className="text-left sm:text-right">
               <p className="text-sm tracking-wide uppercase">

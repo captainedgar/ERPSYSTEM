@@ -26,6 +26,14 @@ export interface AuthUser {
   name: string;
   email: string;
   companyId: string;
+  company: {
+    id: string;
+    name: string;
+    legalName: string | null;
+    businessType: string;
+    logoUrl: string | null;
+    logoUpdatedAt: string | null;
+  };
   role: { id: string; code: string; name: string };
   branch: { id: string; code: string; name: string } | null;
 }
@@ -36,6 +44,7 @@ interface AuthContextValue {
   sessionMessage: string | null;
   clearSessionMessage: () => void;
   setSession: (user: AuthUser, tokens: AuthTokens) => void;
+  setUser: (user: AuthUser) => void;
   logout: () => Promise<void>;
 }
 
@@ -79,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       sessionMessage,
       clearSessionMessage,
+      setUser,
       setSession: (nextUser, tokens) => {
         storeTokens(tokens);
         setUser(nextUser);

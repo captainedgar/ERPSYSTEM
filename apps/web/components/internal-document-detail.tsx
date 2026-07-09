@@ -8,6 +8,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { Status, TypeLabel } from '@/components/internal-documents-manager';
 import { currency } from '@/components/sales-manager';
+import { createElectronicInvoiceFromInternalDocument } from '@/lib/fiscal';
 import {
   getInternalDocument,
   InternalDocumentStatus,
@@ -22,6 +23,8 @@ export function InternalDocumentDetail({ id }: { id: string }) {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [voiding, setVoiding] = useState(false);
+  const [creatingFiscalDraft, setCreatingFiscalDraft] = useState(false);
+  const [fiscalDraftId, setFiscalDraftId] = useState('');
   const [error, setError] = useState('');
 
   const canView = [
@@ -80,6 +83,26 @@ export function InternalDocumentDetail({ id }: { id: string }) {
       );
     } finally {
       setVoiding(false);
+    }
+  }
+
+  async function createFiscalDraft() {
+    if (!document) return;
+    setCreatingFiscalDraft(true);
+    setError('');
+    try {
+      const invoice = await createElectronicInvoiceFromInternalDocument(
+        document.id,
+      );
+      setFiscalDraftId(invoice.id);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo crear el borrador fiscal',
+      );
+    } finally {
+      setCreatingFiscalDraft(false);
     }
   }
 
@@ -242,30 +265,53 @@ export function InternalDocumentDetail({ id }: { id: string }) {
             )}
 
             {canVoid && document.status === InternalDocumentStatus.ISSUED && (
-              <form
-                className="mt-6 border-t border-slate-800 pt-5"
-                onSubmit={(event) => void submitVoid(event)}
-              >
-                <label>
-                  Motivo de anulacion
-                  <textarea
-                    className="min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white"
-                    maxLength={500}
-                    minLength={3}
-                    required
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                  />
-                </label>
-                <Button
-                  className="mt-3 w-full"
-                  disabled={voiding}
-                  type="submit"
-                  variant="secondary"
+              <>
+                <div className="mt-6 border-t border-slate-800 pt-5">
+                  <Button
+                    className="w-full"
+                    disabled={creatingFiscalDraft}
+                    onClick={() => void createFiscalDraft()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {creatingFiscalDraft
+                      ? 'Creando...'
+                      : 'Crear borrador fiscal'}
+                  </Button>
+                  {fiscalDraftId && (
+                    <Link
+                      className="mt-3 block text-center text-sm text-emerald-400"
+                      href={`/fiscal/electronic-invoices/${fiscalDraftId}`}
+                    >
+                      Ver borrador fiscal
+                    </Link>
+                  )}
+                </div>
+                <form
+                  className="mt-6 border-t border-slate-800 pt-5"
+                  onSubmit={(event) => void submitVoid(event)}
                 >
-                  {voiding ? 'Anulando...' : 'Anular documento'}
-                </Button>
-              </form>
+                  <label>
+                    Motivo de anulacion
+                    <textarea
+                      className="min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white"
+                      maxLength={500}
+                      minLength={3}
+                      required
+                      value={reason}
+                      onChange={(event) => setReason(event.target.value)}
+                    />
+                  </label>
+                  <Button
+                    className="mt-3 w-full"
+                    disabled={voiding}
+                    type="submit"
+                    variant="secondary"
+                  >
+                    {voiding ? 'Anulando...' : 'Anular documento'}
+                  </Button>
+                </form>
+              </>
             )}
           </aside>
         </div>

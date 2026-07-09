@@ -3,9 +3,10 @@
 import { Button } from '@comercia/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { CompanyLogo } from '@/components/company-logo';
 import {
   applyBusinessTemplate,
   BusinessType,
@@ -19,6 +20,12 @@ import {
   type BusinessSettings,
   type BusinessTemplateDefinition,
 } from '@/lib/business-settings';
+import {
+  deleteCompanyLogo,
+  getCompanyLogo,
+  uploadCompanyLogo,
+  type CompanyBranding,
+} from '@/lib/company';
 
 const paymentLabels: Record<PaymentMethod, string> = {
   CASH: 'Efectivo',
@@ -39,11 +46,15 @@ export function BusinessSettingsForm({
   onboarding?: boolean;
 }) {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, setUser, user } = useAuth();
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [branding, setBranding] = useState<CompanyBranding | null>(null);
   const [templates, setTemplates] = useState<BusinessTemplateDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [logoSubmitting, setLogoSubmitting] = useState(false);
+  const [logoMessage, setLogoMessage] = useState('');
+  const [logoError, setLogoError] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -53,10 +64,15 @@ export function BusinessSettingsForm({
 
   useEffect(() => {
     if (!user) return;
-    void Promise.all([getBusinessSettings(), getBusinessTemplates()])
-      .then(([current, availableTemplates]) => {
+    void Promise.all([
+      getBusinessSettings(),
+      getBusinessTemplates(),
+      getCompanyLogo(),
+    ])
+      .then(([current, availableTemplates, companyBranding]) => {
         setSettings(current);
         setTemplates(availableTemplates);
+        setBranding(companyBranding);
       })
       .catch((reason: unknown) => {
         setError(
@@ -129,6 +145,71 @@ export function BusinessSettingsForm({
       const updated = await completeBusinessOnboarding();
       setSettings(updated);
       return 'Configuración inicial completada.';
+    });
+  }
+
+  async function selectLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (
+      !['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(
+        file.type,
+      )
+    ) {
+      setLogoError('Solo puedes subir PNG, JPG o WEBP.');
+      setLogoMessage('');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError('El logo no puede superar 2MB.');
+      setLogoMessage('');
+      return;
+    }
+    await runLogoAction(async () => {
+      const updated = await uploadCompanyLogo(file);
+      syncBranding(updated);
+      return 'Logo cargado correctamente.';
+    });
+  }
+
+  async function removeLogo() {
+    await runLogoAction(async () => {
+      const updated = await deleteCompanyLogo();
+      syncBranding(updated);
+      return 'Logo eliminado.';
+    });
+  }
+
+  async function runLogoAction(action: () => Promise<string>) {
+    setLogoSubmitting(true);
+    setLogoError('');
+    setLogoMessage('');
+    try {
+      setLogoMessage(await action());
+    } catch (reason) {
+      setLogoError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo actualizar el logo',
+      );
+    } finally {
+      setLogoSubmitting(false);
+    }
+  }
+
+  function syncBranding(updated: CompanyBranding) {
+    setBranding(updated);
+    if (!user) return;
+    setUser({
+      ...user,
+      company: {
+        ...user.company,
+        name: updated.name,
+        legalName: updated.legalName,
+        logoUrl: updated.logoUrl,
+        logoUpdatedAt: updated.logoUpdatedAt,
+      },
     });
   }
 
@@ -236,6 +317,51 @@ export function BusinessSettingsForm({
           >
             Aplicar plantilla recomendada
           </Button>
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Logo de la empresa</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                PNG, JPG o WEBP. Maximo 2MB. Recomendado 512x512 px.
+              </p>
+            </div>
+            <CompanyLogo
+              logoUrl={branding?.logoUrl ?? user.company.logoUrl}
+              name={branding?.name ?? user.company.name}
+              size="lg"
+            />
+          </div>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
+              {branding?.logoUrl ? 'Cambiar logo' : 'Subir logo'}
+              <input
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="sr-only"
+                disabled={logoSubmitting}
+                onChange={(event) => void selectLogo(event)}
+                type="file"
+              />
+            </label>
+            <Button
+              disabled={logoSubmitting || !branding?.logoUrl}
+              onClick={() => void removeLogo()}
+              type="button"
+              variant="secondary"
+            >
+              Eliminar logo
+            </Button>
+          </div>
+          {logoSubmitting && (
+            <p className="mt-3 text-sm text-slate-400">Subiendo logo...</p>
+          )}
+          {logoError && (
+            <p className="mt-3 text-sm text-rose-400">{logoError}</p>
+          )}
+          {logoMessage && (
+            <p className="mt-3 text-sm text-emerald-400">{logoMessage}</p>
+          )}
         </section>
 
         <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">

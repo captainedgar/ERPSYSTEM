@@ -7,6 +7,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import { currency, Status } from '@/components/sales-manager';
+import { createElectronicInvoiceFromSale } from '@/lib/fiscal';
 import {
   createInternalDocumentFromSale,
   InternalDocumentStatus,
@@ -26,6 +27,8 @@ export function SaleDetail({ saleId }: { saleId: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [creatingDocument, setCreatingDocument] =
     useState<InternalDocumentType | null>(null);
+  const [creatingFiscalDraft, setCreatingFiscalDraft] = useState(false);
+  const [fiscalDraftId, setFiscalDraftId] = useState('');
   const [error, setError] = useState('');
 
   const canView = [
@@ -105,6 +108,24 @@ export function SaleDetail({ saleId }: { saleId: string }) {
       );
     } finally {
       setCreatingDocument(null);
+    }
+  }
+
+  async function createFiscalDraft() {
+    if (!sale) return;
+    setCreatingFiscalDraft(true);
+    setError('');
+    try {
+      const invoice = await createElectronicInvoiceFromSale(sale.id);
+      setFiscalDraftId(invoice.id);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo crear el borrador fiscal',
+      );
+    } finally {
+      setCreatingFiscalDraft(false);
     }
   }
 
@@ -303,6 +324,24 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                   >
                     Ver documentos internos
                   </Link>
+                  <Button
+                    disabled={creatingFiscalDraft}
+                    onClick={() => void createFiscalDraft()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {creatingFiscalDraft
+                      ? 'Creando...'
+                      : 'Crear borrador fiscal'}
+                  </Button>
+                  {fiscalDraftId && (
+                    <Link
+                      className="text-center text-sm text-emerald-400"
+                      href={`/fiscal/electronic-invoices/${fiscalDraftId}`}
+                    >
+                      Ver borrador fiscal
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
