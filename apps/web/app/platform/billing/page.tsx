@@ -9,6 +9,7 @@ import {
   PlatformMetricCard,
   PlatformSubscriptionStatusBadge,
   platformErrorClass,
+  platformErrorMessage,
   platformLinkClass,
   platformMoney,
   platformPanelClass,
@@ -51,7 +52,7 @@ export default function PlatformBillingPage() {
       setCompanies(nextCompanies);
       setCurrentTime(Date.now());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Error');
+      setError(platformErrorMessage('No se pudo cargar billing.', reason));
     } finally {
       setLoading(false);
     }
@@ -75,7 +76,7 @@ export default function PlatformBillingPage() {
         setCurrentTime(Date.now());
       } catch (reason) {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'Error');
+          setError(platformErrorMessage('No se pudo cargar billing.', reason));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -95,7 +96,9 @@ export default function PlatformBillingPage() {
       setProcessResult(await processOverdueBilling());
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Error');
+      setError(
+        platformErrorMessage('No se pudo procesar vencimientos.', reason),
+      );
     } finally {
       setProcessing(false);
     }

@@ -14,7 +14,10 @@ import {
 
 const nav = [
   { href: '/platform/dashboard', label: 'Dashboard' },
+  { href: '/platform/companies', label: 'Empresas' },
+  { href: '/platform/plans', label: 'Planes' },
   { href: '/platform/billing', label: 'Billing' },
+  { href: '/platform/audit', label: 'Auditoria' },
 ];
 
 export function PlatformShell({ children }: { children: ReactNode }) {

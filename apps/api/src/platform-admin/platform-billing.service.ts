@@ -37,6 +37,8 @@ const subscriptionInclude = {
 } satisfies Prisma.CompanySubscriptionInclude;
 
 export interface BillingOverdueProcessResult {
+  success: boolean;
+  movedToGrace: number;
   movedToGracePeriod: number;
   companiesSuspended: number;
   noActionRequired: number;
@@ -449,6 +451,8 @@ export class PlatformBillingService {
       });
 
       return {
+        success: true,
+        movedToGrace: movedToGracePeriod,
         movedToGracePeriod,
         companiesSuspended,
         noActionRequired: total - movedToGracePeriod - companiesSuspended,

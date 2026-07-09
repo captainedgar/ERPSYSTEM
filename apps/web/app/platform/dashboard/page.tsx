@@ -10,6 +10,8 @@ import {
   PlatformMetricCard,
   PlatformQuickActions,
   PlatformRecentCompaniesTable,
+  platformErrorClass,
+  platformErrorMessage,
   platformMoney,
 } from '@/components/platform-ui';
 import {
@@ -44,7 +46,9 @@ export default function PlatformDashboardPage() {
         }
       } catch (reason) {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'Error');
+          setError(
+            platformErrorMessage('No se pudo cargar el dashboard.', reason),
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -87,16 +91,12 @@ export default function PlatformDashboardPage() {
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <PlatformHeader title="Centro de Control SaaS" />
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {loading ? 'Sincronizando datos...' : 'Estado global actualizado'}
           </div>
         </div>
 
-        {error && (
-          <p className="mt-5 rounded-lg border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200">
-            {error}
-          </p>
-        )}
+        {error && <p className={platformErrorClass}>{error}</p>}
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <PlatformMetricCard

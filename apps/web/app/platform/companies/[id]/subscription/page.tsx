@@ -9,6 +9,7 @@ import {
   PlatformHeader,
   PlatformSubscriptionStatusBadge,
   platformErrorClass,
+  platformErrorMessage,
   platformInputClass,
   platformLabelClass,
   platformLinkClass,
@@ -59,10 +60,14 @@ export default function PlatformCompanySubscriptionPage() {
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
   const [events, setEvents] = useState<SubscriptionEvent[]>([]);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [subscriptionForm, setSubscriptionForm] = useState({
     planId: '',
     status: 'ACTIVE' as CompanySubscriptionStatus,
+    startsAt: '',
+    currentPeriodStart: '',
+    currentPeriodEnd: '',
     nextPaymentDueAt: '',
     graceDays: '5',
   });
@@ -99,6 +104,9 @@ export default function PlatformCompanySubscriptionPage() {
       setSubscriptionForm({
         planId: nextSubscription?.planId ?? nextPlans[0]?.id ?? '',
         status: nextSubscription?.status ?? 'ACTIVE',
+        startsAt: toInputDate(nextSubscription?.startsAt),
+        currentPeriodStart: toInputDate(nextSubscription?.currentPeriodStart),
+        currentPeriodEnd: toInputDate(nextSubscription?.currentPeriodEnd),
         nextPaymentDueAt: toInputDate(nextSubscription?.nextPaymentDueAt),
         graceDays: String(nextSubscription?.graceDays ?? 5),
       });
@@ -109,7 +117,9 @@ export default function PlatformCompanySubscriptionPage() {
           : current.amount,
       }));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Error');
+      setError(
+        platformErrorMessage('No se pudo cargar la informacion.', reason),
+      );
     }
   }
 
@@ -140,6 +150,9 @@ export default function PlatformCompanySubscriptionPage() {
         setSubscriptionForm({
           planId: nextSubscription?.planId ?? nextPlans[0]?.id ?? '',
           status: nextSubscription?.status ?? 'ACTIVE',
+          startsAt: toInputDate(nextSubscription?.startsAt),
+          currentPeriodStart: toInputDate(nextSubscription?.currentPeriodStart),
+          currentPeriodEnd: toInputDate(nextSubscription?.currentPeriodEnd),
           nextPaymentDueAt: toInputDate(nextSubscription?.nextPaymentDueAt),
           graceDays: String(nextSubscription?.graceDays ?? 5),
         });
@@ -151,7 +164,9 @@ export default function PlatformCompanySubscriptionPage() {
         }));
       } catch (reason) {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'Error');
+          setError(
+            platformErrorMessage('No se pudo cargar la informacion.', reason),
+          );
         }
       }
     }
@@ -165,16 +180,23 @@ export default function PlatformCompanySubscriptionPage() {
     event.preventDefault();
     setSubmitting(true);
     setError('');
+    setMessage('');
     try {
       await upsertCompanySubscription(params.id, {
         planId: subscriptionForm.planId,
         status: subscriptionForm.status,
+        startsAt: subscriptionForm.startsAt || undefined,
+        currentPeriodStart: subscriptionForm.currentPeriodStart || undefined,
+        currentPeriodEnd: subscriptionForm.currentPeriodEnd || undefined,
         nextPaymentDueAt: subscriptionForm.nextPaymentDueAt || undefined,
         graceDays: Number(subscriptionForm.graceDays),
       });
       await refresh();
+      setMessage('Suscripcion guardada correctamente.');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Error');
+      setError(
+        platformErrorMessage('No se pudo guardar la suscripcion.', reason),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -184,6 +206,7 @@ export default function PlatformCompanySubscriptionPage() {
     event.preventDefault();
     setSubmitting(true);
     setError('');
+    setMessage('');
     try {
       await registerSubscriptionPayment(params.id, {
         amount: Number(paymentForm.amount),
@@ -201,8 +224,9 @@ export default function PlatformCompanySubscriptionPage() {
         paidAt: todayInput(),
       }));
       await refresh();
+      setMessage('Pago registrado correctamente.');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Error');
+      setError(platformErrorMessage('No se pudo registrar el pago.', reason));
     } finally {
       setSubmitting(false);
     }
@@ -218,6 +242,11 @@ export default function PlatformCompanySubscriptionPage() {
           </Link>
         </div>
         {error && <p className={platformErrorClass}>{error}</p>}
+        {message && (
+          <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-700">
+            {message}
+          </p>
+        )}
         {subscription?.status === 'GRACE_PERIOD' && (
           <Alert tone="amber">Esta empresa esta en periodo de gracia.</Alert>
         )}
@@ -247,8 +276,12 @@ export default function PlatformCompanySubscriptionPage() {
           <InfoCard label="Fecha de suspension">
             {formatDate(subscription?.suspendedAt)}
           </InfoCard>
-          <InfoCard label="Ultimo pago">
-            {formatDate(subscription?.lastPaymentAt)}
+          <InfoCard label="Periodo actual">
+            {subscription
+              ? `${formatDate(subscription.currentPeriodStart)} - ${formatDate(
+                  subscription.currentPeriodEnd,
+                )}`
+              : 'N/D'}
           </InfoCard>
         </section>
 
@@ -284,6 +317,12 @@ export default function PlatformCompanySubscriptionPage() {
                       ))}
                   </select>
                 </label>
+                {!plans.filter((plan) => plan.isActive).length && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-700">
+                    No hay planes disponibles. Ejecuta npm run
+                    db:seed-saas-plans.
+                  </p>
+                )}
                 <label className={platformLabelClass}>
                   <span>Estado</span>
                   <select
@@ -303,6 +342,41 @@ export default function PlatformCompanySubscriptionPage() {
                     ))}
                   </select>
                 </label>
+                <Field
+                  label="Fecha de inicio"
+                  onChange={(value) =>
+                    setSubscriptionForm((current) => ({
+                      ...current,
+                      startsAt: value,
+                    }))
+                  }
+                  type="date"
+                  value={subscriptionForm.startsAt}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Inicio periodo"
+                    onChange={(value) =>
+                      setSubscriptionForm((current) => ({
+                        ...current,
+                        currentPeriodStart: value,
+                      }))
+                    }
+                    type="date"
+                    value={subscriptionForm.currentPeriodStart}
+                  />
+                  <Field
+                    label="Fin periodo"
+                    onChange={(value) =>
+                      setSubscriptionForm((current) => ({
+                        ...current,
+                        currentPeriodEnd: value,
+                      }))
+                    }
+                    type="date"
+                    value={subscriptionForm.currentPeriodEnd}
+                  />
+                </div>
                 <Field
                   label="Proximo pago"
                   onChange={(value) =>

@@ -26,6 +26,37 @@ export const SESSION_EXPIRED_MESSAGE =
   'Tu sesi\u00f3n expir\u00f3. Inicia sesi\u00f3n nuevamente.';
 let refreshRequest: Promise<string | null> | null = null;
 
+export async function parseJsonSafe(response: Response): Promise<unknown> {
+  if (response.status === 204) return null;
+
+  const text = await response.text();
+  if (!text.trim()) return null;
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(
+        `Error del servidor (${response.status}).`,
+        response.status,
+      );
+    }
+    throw new ApiError(
+      'La respuesta del servidor no es JSON valido.',
+      response.status,
+    );
+  }
+}
+
+export function getResponseMessage(data: unknown) {
+  if (!data || typeof data !== 'object' || !('message' in data)) return null;
+
+  const message = (data as { message?: unknown }).message;
+  if (Array.isArray(message)) return message.map(String).join(', ');
+  if (typeof message === 'string') return message;
+  return null;
+}
+
 export function storeTokens(tokens: AuthTokens) {
   localStorage.setItem(ACCESS_KEY, tokens.accessToken);
   localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
@@ -87,13 +118,9 @@ export async function apiRequest<T>(
     expireSession();
     throw new ApiError(SESSION_EXPIRED_MESSAGE, 401);
   }
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = Array.isArray(body?.message)
-      ? body.message.join(', ')
-      : body?.message;
+    const message = getResponseMessage(data);
     throw new ApiError(
       message ??
         (response.status === 401 || response.status === 403
@@ -102,7 +129,7 @@ export async function apiRequest<T>(
       response.status,
     );
   }
-  return response.json() as Promise<T>;
+  return data as T;
 }
 
 async function refreshAccessToken() {
@@ -119,8 +146,9 @@ async function refreshAccessToken() {
         body: JSON.stringify({ refreshToken }),
         signal: controller.signal,
       });
-      if (!response.ok) return null;
-      const tokens = (await response.json()) as AuthTokens;
+      const data = await parseJsonSafe(response);
+      if (!response.ok || !data) return null;
+      const tokens = data as AuthTokens;
       storeTokens(tokens);
       return tokens.accessToken;
     } catch {

@@ -7,7 +7,7 @@ import { useState, type FormEvent } from 'react';
 import { platformLogin, storePlatformToken } from '@/lib/platform';
 
 const inputClass =
-  'mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+  'mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 placeholder:text-slate-400 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 
 export default function PlatformLoginPage() {
   const router = useRouter();
@@ -38,10 +38,12 @@ export default function PlatformLoginPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12">
       <form
-        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-2xl shadow-slate-950/20"
+        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-950/25"
         onSubmit={(event) => void submit(event)}
       >
-        <p className="text-sm font-semibold text-blue-700">Comercia ERP</p>
+        <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+          Comercia ERP
+        </div>
         <h1 className="mt-3 text-3xl font-semibold text-slate-950">
           Platform Admin
         </h1>
@@ -78,9 +80,16 @@ export default function PlatformLoginPage() {
             {error}
           </p>
         )}
-        <Button className="mt-7 w-full" disabled={submitting} type="submit">
+        <Button
+          className="mt-7 w-full rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700"
+          disabled={submitting}
+          type="submit"
+        >
           {submitting ? 'Ingresando...' : 'Entrar'}
         </Button>
+        <p className="mt-5 text-center text-xs text-slate-500">
+          Acceso exclusivo para administradores de plataforma.
+        </p>
       </form>
     </main>
   );

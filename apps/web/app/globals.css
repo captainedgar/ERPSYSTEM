@@ -1,46 +1,53 @@
 @import 'tailwindcss';
+@source "../components/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
 @source "../../../packages/ui/src/**/*.{ts,tsx}";
 
-:root {
-  color-scheme: dark;
-}
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
 
-* {
-  box-sizing: border-box;
-}
+  * {
+    box-sizing: border-box;
+  }
 
-body {
-  margin: 0;
-  background: #020617;
-  color: #f8fafc;
-  font-family: Arial, Helvetica, sans-serif;
-}
+  body {
+    margin: 0;
+    background: #020617;
+    color: #f8fafc;
+    font-family: Arial, Helvetica, sans-serif;
+  }
 
-input,
-select {
-  width: 100%;
-  border: 1px solid #334155;
-  border-radius: 0.75rem;
-  background: #0f172a;
-  padding: 0.75rem 0.875rem;
-  color: white;
-  outline: none;
-}
+  input,
+  select,
+  textarea {
+    width: 100%;
+    border: 1px solid #334155;
+    border-radius: 0.75rem;
+    background: #0f172a;
+    padding: 0.75rem 0.875rem;
+    color: white;
+    outline: none;
+  }
 
-input:focus,
-select:focus {
-  border-color: #34d399;
-}
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #34d399;
+  }
 
-input[type='checkbox'] {
-  width: 1rem;
-  height: 1rem;
-  accent-color: #10b981;
-}
+  input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #10b981;
+  }
 
-label {
-  display: grid;
-  gap: 0.4rem;
-  color: #cbd5e1;
-  font-size: 0.875rem;
+  label {
+    display: grid;
+    gap: 0.4rem;
+    color: #cbd5e1;
+    font-size: 0.875rem;
+  }
 }

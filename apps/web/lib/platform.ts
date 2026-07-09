@@ -1,3 +1,5 @@
+import { getResponseMessage, parseJsonSafe } from './api';
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.API_URL ??
@@ -34,6 +36,28 @@ export interface PlatformCompany {
   createdAt: string;
   updatedAt: string;
   _count?: { users?: number; branches?: number; sales?: number };
+}
+
+export interface PlatformCompanyUser {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  role: { id: string; code: string; name: string };
+  branch?: { id: string; code: string; name: string } | null;
+}
+
+export interface PlatformCompanyMetrics {
+  companyId: string;
+  users: number;
+  branches: number;
+  products: number;
+  customers: number;
+  totalSalesAmount: string | number;
+  totalSales: number;
+  internalDocuments: number;
+  electronicInvoices: number;
+  fiscalErrors: number;
 }
 
 export interface PlatformMetrics {
@@ -125,6 +149,8 @@ export interface SubscriptionEvent {
 }
 
 export interface BillingOverdueProcessResult {
+  success?: true;
+  movedToGrace?: number;
   movedToGracePeriod: number;
   companiesSuspended: number;
   noActionRequired: number;
@@ -173,6 +199,8 @@ export function listPlatformCompanies() {
   return platformRequest<PlatformCompany[]>('/platform/companies');
 }
 
+export const getPlatformCompanies = listPlatformCompanies;
+
 export function listPlatformAuditLogs() {
   return platformRequest<PlatformAuditLog[]>('/platform/audit-logs');
 }
@@ -181,9 +209,92 @@ export function getPlatformCompany(companyId: string) {
   return platformRequest<PlatformCompany>(`/platform/companies/${companyId}`);
 }
 
+export function getPlatformCompanyUsers(companyId: string) {
+  return platformRequest<PlatformCompanyUser[]>(
+    `/platform/companies/${companyId}/users`,
+  );
+}
+
+export function getPlatformCompanyMetrics(companyId: string) {
+  return platformRequest<PlatformCompanyMetrics>(
+    `/platform/companies/${companyId}/metrics`,
+  );
+}
+
+export function updatePlatformCompanyStatus(
+  companyId: string,
+  status: 'ACTIVE' | 'SUSPENDED',
+) {
+  return platformRequest<PlatformCompany>(
+    `/platform/companies/${companyId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    },
+  );
+}
+
 export function listSaasPlans() {
   return platformRequest<SaasPlan[]>('/platform/plans');
 }
+
+export const getPlatformPlans = listSaasPlans;
+
+export function getSaasPlan(planId: string) {
+  return platformRequest<SaasPlan>(`/platform/plans/${planId}`);
+}
+
+export const getPlatformPlan = getSaasPlan;
+
+export function createSaasPlan(body: {
+  name: string;
+  description?: string;
+  price: number;
+  currency: 'DOP';
+  billingInterval: SaasBillingInterval;
+  graceDays: number;
+  maxUsers?: number;
+  maxBranches?: number;
+  modules: Record<string, boolean>;
+}) {
+  return platformRequest<SaasPlan>('/platform/plans', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export const createPlatformPlan = createSaasPlan;
+
+export function updateSaasPlan(
+  planId: string,
+  body: Partial<{
+    name: string;
+    description: string;
+    price: number;
+    currency: 'DOP';
+    billingInterval: SaasBillingInterval;
+    graceDays: number;
+    maxUsers: number | null;
+    maxBranches: number | null;
+    modules: Record<string, boolean>;
+  }>,
+) {
+  return platformRequest<SaasPlan>(`/platform/plans/${planId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+export const updatePlatformPlan = updateSaasPlan;
+
+export function updateSaasPlanStatus(planId: string, isActive: boolean) {
+  return platformRequest<SaasPlan>(`/platform/plans/${planId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+}
+
+export const updatePlatformPlanStatus = updateSaasPlanStatus;
 
 export function listBillingSubscriptions() {
   return platformRequest<CompanySubscription[]>(
@@ -206,6 +317,9 @@ export function upsertCompanySubscription(
   body: {
     planId: string;
     status?: CompanySubscriptionStatus;
+    startsAt?: string;
+    currentPeriodStart?: string;
+    currentPeriodEnd?: string;
     nextPaymentDueAt?: string;
     graceDays?: number;
   },
@@ -215,6 +329,8 @@ export function upsertCompanySubscription(
     { method: 'PUT', body: JSON.stringify(body) },
   );
 }
+
+export const updateCompanySubscription = upsertCompanySubscription;
 
 export function registerSubscriptionPayment(
   companyId: string,
@@ -237,16 +353,31 @@ export function registerSubscriptionPayment(
   });
 }
 
+export const registerCompanySubscriptionPayment = registerSubscriptionPayment;
+
 export function listSubscriptionPayments(companyId: string) {
   return platformRequest<SubscriptionPayment[]>(
     `/platform/companies/${companyId}/subscription/payments`,
   );
 }
 
+export const getCompanySubscriptionPayments = listSubscriptionPayments;
+
 export function listSubscriptionEvents(companyId: string) {
   return platformRequest<SubscriptionEvent[]>(
     `/platform/companies/${companyId}/subscription/events`,
   );
+}
+
+export const getCompanySubscriptionEvents = listSubscriptionEvents;
+
+export async function getPlatformBilling() {
+  const [subscriptions, payments, companies] = await Promise.all([
+    listBillingSubscriptions(),
+    listBillingPayments(),
+    listPlatformCompanies(),
+  ]);
+  return { companies, payments, subscriptions };
 }
 
 export function processOverdueBilling() {
@@ -269,14 +400,10 @@ async function platformRequest<T>(
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = Array.isArray(body?.message)
-      ? body.message.join(', ')
-      : body?.message;
+    const message = getResponseMessage(data);
     throw new Error(message ?? 'No se pudo completar la solicitud');
   }
-  return response.json() as Promise<T>;
+  return data as T;
 }
