@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { getStoredActiveBranchId } from '@/lib/api';
 import {
   closeCashSession,
   createManualCashIn,
@@ -30,6 +31,8 @@ export function CashManager() {
   const [movementReason, setMovementReason] = useState('');
   const [countedAmount, setCountedAmount] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const effectiveBranchId = activeBranchId ?? user?.branch?.id ?? null;
 
   const role = user?.role.code ?? '';
   const canView = [
@@ -49,7 +52,18 @@ export function CashManager() {
   }, [authLoading, router, user]);
 
   useEffect(() => {
-    if (!user || !canView) return;
+    const onBranchChanged = () => {
+      setActiveBranchId(getStoredActiveBranchId() ?? user?.branch?.id ?? null);
+      setSession(null);
+      setLoading(true);
+    };
+    window.addEventListener('comercia:branch-changed', onBranchChanged);
+    return () =>
+      window.removeEventListener('comercia:branch-changed', onBranchChanged);
+  }, [user?.branch?.id]);
+
+  useEffect(() => {
+    if (!user || !canView || !effectiveBranchId) return;
     let cancelled = false;
     async function load() {
       try {
@@ -71,14 +85,14 @@ export function CashManager() {
     return () => {
       cancelled = true;
     };
-  }, [canView, user]);
+  }, [canView, effectiveBranchId, user]);
 
   async function submitOpen(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!user?.branch) return;
+    if (!effectiveBranchId) return;
     await runAction(async () => {
       const opened = await openCashSession({
-        branchId: user.branch!.id,
+        branchId: effectiveBranchId,
         openingAmount: Number(openingAmount),
         notes: openingNotes.trim() || undefined,
       });
@@ -175,7 +189,7 @@ export function CashManager() {
             <h1 className="mt-1 text-3xl font-semibold">Caja actual</h1>
             <p className="mt-2 text-slate-500">
               Control diario de efectivo para{' '}
-              {user.branch?.name ?? 'tu sucursal'}.
+              {session?.branch.name ?? user.branch?.name ?? 'tu sucursal'}.
             </p>
           </div>
           <div className="flex gap-4 text-sm">
@@ -220,7 +234,7 @@ export function CashManager() {
             <p className="mt-2 text-slate-500">
               Abre una caja para registrar ventas en efectivo y movimientos.
             </p>
-            {canOperate && user.branch && (
+            {canOperate && effectiveBranchId && (
               <form
                 className="mt-6 grid max-w-xl gap-4"
                 onSubmit={(event) => void submitOpen(event)}

@@ -4,9 +4,11 @@ import { Button } from '@comercia/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { getStoredActiveBranchId } from '@/lib/api';
+import { listAvailableBranches, type AvailableBranch } from '@/lib/branches';
 
 const roleAccess = {
   canSell: ['OWNER', 'ADMIN', 'CASHIER', 'SELLER'],
@@ -16,6 +18,10 @@ const roleAccess = {
 export default function DashboardPage() {
   const router = useRouter();
   const { loading, logout, user } = useAuth();
+  const [availableBranches, setAvailableBranches] = useState<AvailableBranch[]>(
+    [],
+  );
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -23,6 +29,32 @@ export default function DashboardPage() {
       router.replace('/suspended');
     }
   }, [loading, router, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const loadBranches = async () => {
+      const response = await listAvailableBranches();
+      if (cancelled) return;
+      setAvailableBranches(response.items);
+      setActiveBranchId(
+        getStoredActiveBranchId() ??
+          response.activeBranchId ??
+          response.defaultBranchId,
+      );
+    };
+    void loadBranches().catch(() => {
+      if (!cancelled) setAvailableBranches([]);
+    });
+    const onBranchChanged = () => {
+      setActiveBranchId(getStoredActiveBranchId());
+    };
+    window.addEventListener('comercia:branch-changed', onBranchChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('comercia:branch-changed', onBranchChanged);
+    };
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -77,6 +109,12 @@ export default function DashboardPage() {
     },
   ].filter((action) => action.enabled);
 
+  const activeBranch =
+    availableBranches.find((branch) => branch.id === activeBranchId) ??
+    availableBranches.find((branch) => branch.id === user.branch?.id) ??
+    null;
+  const canManageBranches = ['OWNER', 'ADMIN'].includes(user.role.code);
+
   const metrics = [
     {
       label: 'Empresa',
@@ -85,8 +123,8 @@ export default function DashboardPage() {
     },
     {
       label: 'Sucursal',
-      value: user.branch?.name ?? 'Sin asignar',
-      detail: 'Contexto operativo',
+      value: activeBranch?.name ?? user.branch?.name ?? 'Sin asignar',
+      detail: activeBranch?.isMain ? 'Principal activa' : 'Contexto operativo',
     },
     {
       label: 'Rol',
@@ -123,6 +161,14 @@ export default function DashboardPage() {
             >
               Configuracion
             </Link>
+            {canManageBranches && (
+              <Link
+                className="inline-flex h-10 items-center rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100"
+                href="/settings/branches"
+              >
+                Sucursales
+              </Link>
+            )}
             <Button
               variant="secondary"
               onClick={() => void logout().then(() => router.push('/login'))}
@@ -190,7 +236,11 @@ export default function DashboardPage() {
             <Panel title="Estado del dia">
               <div className="space-y-3">
                 <StatusItem label="Empresa" status="Lista" tone="success" />
-                <StatusItem label="Sucursal" status="Asignada" tone="success" />
+                <StatusItem
+                  label="Sucursal activa"
+                  status={activeBranch ? 'Seleccionada' : 'Asignada'}
+                  tone="success"
+                />
                 <StatusItem
                   label="Configuracion"
                   status="Revisar"

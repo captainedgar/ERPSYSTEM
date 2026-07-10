@@ -100,6 +100,14 @@ export class AuthService {
           },
           include: { role: true },
         });
+        await tx.userBranchMembership.create({
+          data: {
+            companyId: company.id,
+            userId: user.id,
+            branchId: branch.id,
+            isDefault: true,
+          },
+        });
         await tx.auditLog.create({
           data: {
             companyId: company.id,

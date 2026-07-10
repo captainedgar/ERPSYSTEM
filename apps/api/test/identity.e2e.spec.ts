@@ -452,13 +452,20 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(settingsMine.body.companyId).toBe(companyA.company.id);
   });
 
-  it('creates, lists and updates only branches owned by the company', async () => {
+  it('creates, lists, updates and protects branch management rules', async () => {
     const companyA = await registerCompany('branches-a');
     const companyB = await registerCompany('branches-b');
+    const roles = await getRoles(companyA.accessToken);
     const created = await http<Branch>(
       'POST',
       '/branches',
-      { name: 'Sucursal Norte', code: 'NORTH' },
+      {
+        name: 'Sucursal Norte',
+        code: 'NORTH',
+        email: 'north@example.test',
+        city: 'Santiago',
+        province: 'Santiago',
+      },
       companyA.accessToken,
     );
     const updated = await http<Branch>(
@@ -473,9 +480,62 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       companyA.accessToken,
     );
+    const cashier = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      created.body.id,
+      'branches-cashier',
+    );
+    const cashierLogin = await login(cashier.email);
+    const cashierBranches = await http<Branch[]>(
+      'GET',
+      '/branches',
+      undefined,
+      cashierLogin.accessToken,
+    );
+    const available = await http<{
+      items: Branch[];
+      defaultBranchId: string | null;
+      activeBranchId: string | null;
+    }>('GET', '/branches/available', undefined, companyA.accessToken);
+    const deactivated = await http<Branch>(
+      'PATCH',
+      `/branches/${created.body.id}/status`,
+      { active: false },
+      companyA.accessToken,
+    );
+    const deactivateOnlyActive = await http<unknown>(
+      'PATCH',
+      `/branches/${companyA.branch.id}/status`,
+      { active: false },
+      companyA.accessToken,
+    );
+    const reactivated = await http<Branch>(
+      'PATCH',
+      `/branches/${created.body.id}/status`,
+      { active: true },
+      companyA.accessToken,
+    );
+    const markedMain = await http<Branch>(
+      'PATCH',
+      `/branches/${created.body.id}/main`,
+      undefined,
+      companyA.accessToken,
+    );
+    const activeMains = await prisma.branch.count({
+      where: { companyId: companyA.company.id, isMain: true, status: 'ACTIVE' },
+    });
+    const crossHeader = await http<unknown>(
+      'GET',
+      '/cash/current',
+      undefined,
+      companyA.accessToken,
+      { 'X-Branch-Id': companyB.branch.id },
+    );
 
     expect(created.status).toBe(201);
     expect(created.body.companyId).toBe(companyA.company.id);
+    expect(created.body.city).toBe('Santiago');
     expect(updated.body.name).toBe('Sucursal Norte Actualizada');
     expect(branches.body).toHaveLength(2);
     expect(
@@ -485,6 +545,68 @@ describe('Identity and multi-company isolation (e2e)', () => {
       false,
     );
     expect(branches.body.some(({ isMain }) => isMain)).toBe(true);
+    expect(cashierBranches.body.map(({ id }) => id)).toEqual([created.body.id]);
+    expect(
+      available.body.items.map(({ companyId }) => companyId),
+    ).not.toContain(companyB.company.id);
+    expect(deactivated.body.status).toBe('INACTIVE');
+    expect(deactivateOnlyActive.status).toBe(400);
+    expect(reactivated.body.status).toBe('ACTIVE');
+    expect(markedMain.body.isMain).toBe(true);
+    expect(activeMains).toBe(1);
+    expect(crossHeader.status).toBe(401);
+  });
+
+  it('uses the active branch header for cash and sales operations', async () => {
+    const registered = await registerCompany('branch-context');
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal La Vega', code: 'LVEGA' },
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto por sucursal', price: 100, stock: 3 },
+      registered.accessToken,
+    );
+    const opened = await http<{ id: string; branchId: string }>(
+      'POST',
+      '/cash/open',
+      { branchId: branch.body.id, openingAmount: 500 },
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const sale = await http<{ id: string; branchId: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.PRODUCT, product.body.id, 1, 118),
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const listedSales = await http<{ items: Array<{ branchId: string }> }>(
+      'GET',
+      '/sales',
+      undefined,
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const currentCash = await http<{
+      session: { id: string; branchId: string } | null;
+    }>('GET', '/cash/current', undefined, registered.accessToken, {
+      'X-Branch-Id': branch.body.id,
+    });
+
+    expect(branch.status).toBe(201);
+    expect(opened.status).toBe(201);
+    expect(opened.body.branchId).toBe(branch.body.id);
+    expect(sale.status).toBe(201);
+    expect(sale.body.branchId).toBe(branch.body.id);
+    expect(listedSales.body.items.map(({ branchId }) => branchId)).toEqual([
+      branch.body.id,
+    ]);
+    expect(currentCash.body.session?.branchId).toBe(branch.body.id);
   });
 
   it('reads and updates only the authenticated company settings', async () => {
@@ -4355,6 +4477,7 @@ async function resetDatabase() {
     prisma.platformUser.deleteMany(),
     prisma.auditLog.deleteMany(),
     prisma.userSession.deleteMany(),
+    prisma.userBranchMembership.deleteMany(),
     prisma.fiscalError.deleteMany(),
     prisma.electronicInvoiceEvent.deleteMany(),
     prisma.electronicInvoice.deleteMany(),
@@ -4548,10 +4671,14 @@ async function http<T>(
   path: string,
   body?: unknown,
   accessToken?: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<HttpResult<T>> {
   const headers = new Headers();
   if (body !== undefined) headers.set('Content-Type', 'application/json');
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method,
     headers,

@@ -21,6 +21,7 @@ export class ApiError extends Error {
 
 const ACCESS_KEY = 'comercia.accessToken';
 const REFRESH_KEY = 'comercia.refreshToken';
+export const ACTIVE_BRANCH_KEY = 'comercia.activeBranchId';
 export const SESSION_EXPIRED_EVENT = 'comercia:session-expired';
 export const SESSION_EXPIRED_MESSAGE =
   'Tu sesi\u00f3n expir\u00f3. Inicia sesi\u00f3n nuevamente.';
@@ -65,6 +66,7 @@ export function storeTokens(tokens: AuthTokens) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(ACTIVE_BRANCH_KEY);
 }
 
 function expireSession() {
@@ -91,6 +93,10 @@ export async function apiRequest<T>(
   }
   const accessToken = getStoredAccessToken();
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const activeBranchId = getStoredActiveBranchId();
+  if (activeBranchId && !path.startsWith('/platform')) {
+    headers.set('X-Branch-Id', activeBranchId);
+  }
 
   let response: Response;
   try {
@@ -130,6 +136,17 @@ export async function apiRequest<T>(
     );
   }
   return data as T;
+}
+
+export function getStoredActiveBranchId() {
+  return typeof window === 'undefined'
+    ? null
+    : localStorage.getItem(ACTIVE_BRANCH_KEY);
+}
+
+export function storeActiveBranchId(branchId: string) {
+  localStorage.setItem(ACTIVE_BRANCH_KEY, branchId);
+  window.dispatchEvent(new CustomEvent('comercia:branch-changed'));
 }
 
 async function refreshAccessToken() {

@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEmail,
   IsOptional,
   IsString,
   Matches,
@@ -24,9 +25,24 @@ export class CreateBranchDto {
   phone?: string;
 
   @IsOptional()
+  @IsEmail()
+  @MaxLength(160)
+  email?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(240)
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  province?: string;
 
   @IsOptional()
   @IsBoolean()

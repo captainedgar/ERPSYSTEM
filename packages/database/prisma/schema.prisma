@@ -268,6 +268,7 @@ model Company {
   businessType          BusinessType
   status                CompanyStatus              @default(ACTIVE)
   branches              Branch[]
+  userBranchMemberships UserBranchMembership[]
   users                 User[]
   roles                 Role[]
   settings              BusinessSettings?
@@ -305,16 +306,20 @@ model Company {
 }
 
 model Branch {
-  id                 String              @id @default(cuid())
+  id                 String                 @id @default(cuid())
   companyId          String
   name               String
   code               String
   phone              String?
+  email              String?
   address            String?
-  isMain             Boolean             @default(false)
-  status             BranchStatus        @default(ACTIVE)
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  city               String?
+  province           String?
+  isMain             Boolean                @default(false)
+  status             BranchStatus           @default(ACTIVE)
+  company            Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   users              User[]
+  userMemberships    UserBranchMembership[]
   auditLogs          AuditLog[]
   sales              Sale[]
   internalDocuments  InternalDocument[]
@@ -323,8 +328,8 @@ model Branch {
   cashSessions       CashSession[]
   cashMovements      CashMovement[]
   inventoryMovements InventoryMovement[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
   deletedAt          DateTime?
 
   @@unique([companyId, code])
@@ -333,38 +338,57 @@ model Branch {
 }
 
 model User {
-  id                        String              @id @default(cuid())
+  id                        String                 @id @default(cuid())
   companyId                 String
   branchId                  String?
   roleId                    String
   name                      String
-  email                     String              @unique
+  email                     String                 @unique
   passwordHash              String
   phone                     String?
-  status                    UserStatus          @default(ACTIVE)
+  status                    UserStatus             @default(ACTIVE)
   lastLoginAt               DateTime?
-  company                   Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  branch                    Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  role                      Role                @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  company                   Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch                    Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchMemberships         UserBranchMembership[]
+  role                      Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
   sessions                  UserSession[]
   auditLogs                 AuditLog[]
-  salesCreated              Sale[]              @relation("SaleCreatedBy")
-  salesCancelled            Sale[]              @relation("SaleCancelledBy")
-  internalDocumentsCreated  InternalDocument[]  @relation("InternalDocumentCreatedBy")
-  internalDocumentsVoided   InternalDocument[]  @relation("InternalDocumentVoidedBy")
-  electronicInvoicesCreated ElectronicInvoice[] @relation("ElectronicInvoiceCreatedBy")
-  paymentsCreated           Payment[]           @relation("PaymentCreatedBy")
-  cashSessionsOpened        CashSession[]       @relation("CashSessionOpenedBy")
-  cashSessionsClosed        CashSession[]       @relation("CashSessionClosedBy")
-  cashMovementsCreated      CashMovement[]      @relation("CashMovementCreatedBy")
-  inventoryMovementsCreated InventoryMovement[] @relation("InventoryMovementCreatedBy")
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
+  salesCreated              Sale[]                 @relation("SaleCreatedBy")
+  salesCancelled            Sale[]                 @relation("SaleCancelledBy")
+  internalDocumentsCreated  InternalDocument[]     @relation("InternalDocumentCreatedBy")
+  internalDocumentsVoided   InternalDocument[]     @relation("InternalDocumentVoidedBy")
+  electronicInvoicesCreated ElectronicInvoice[]    @relation("ElectronicInvoiceCreatedBy")
+  paymentsCreated           Payment[]              @relation("PaymentCreatedBy")
+  cashSessionsOpened        CashSession[]          @relation("CashSessionOpenedBy")
+  cashSessionsClosed        CashSession[]          @relation("CashSessionClosedBy")
+  cashMovementsCreated      CashMovement[]         @relation("CashMovementCreatedBy")
+  inventoryMovementsCreated InventoryMovement[]    @relation("InventoryMovementCreatedBy")
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
   deletedAt                 DateTime?
 
   @@index([companyId, status])
   @@index([companyId, branchId])
   @@map("users")
+}
+
+model UserBranchMembership {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  branchId  String
+  isDefault Boolean  @default(false)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, branchId])
+  @@index([companyId, userId, isDefault])
+  @@index([companyId, branchId])
+  @@map("user_branch_memberships")
 }
 
 model Role {

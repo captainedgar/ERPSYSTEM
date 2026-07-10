@@ -64,20 +64,34 @@ export class UsersService {
     );
     this.assertCanAssignRole(user, role.code);
     try {
-      const created = await this.prisma.user.create({
-        data: {
-          companyId: user.companyId,
-          branchId: dto.branchId,
-          roleId: dto.roleId,
-          name: dto.name.trim(),
-          email: dto.email.toLowerCase().trim(),
-          phone: dto.phone?.trim(),
-          passwordHash: await hash(
-            dto.password,
-            Number(this.config.get<string>('BCRYPT_ROUNDS', '12')),
-          ),
-        },
-        select: userSelect,
+      const passwordHash = await hash(
+        dto.password,
+        Number(this.config.get<string>('BCRYPT_ROUNDS', '12')),
+      );
+      const created = await this.prisma.$transaction(async (tx) => {
+        const nextUser = await tx.user.create({
+          data: {
+            companyId: user.companyId,
+            branchId: dto.branchId,
+            roleId: dto.roleId,
+            name: dto.name.trim(),
+            email: dto.email.toLowerCase().trim(),
+            phone: dto.phone?.trim(),
+            passwordHash,
+          },
+          select: userSelect,
+        });
+        if (dto.branchId) {
+          await tx.userBranchMembership.create({
+            data: {
+              companyId: user.companyId,
+              userId: nextUser.id,
+              branchId: dto.branchId,
+              isDefault: true,
+            },
+          });
+        }
+        return nextUser;
       });
       await this.audit.create({
         companyId: user.companyId,
@@ -115,15 +129,34 @@ export class UsersService {
         throw new BadRequestException('You cannot change your own role');
       }
     }
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: {
-        name: dto.name?.trim(),
-        phone: dto.phone?.trim(),
-        roleId: dto.roleId,
-        branchId: dto.branchId,
-      },
-      select: userSelect,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const nextUser = await tx.user.update({
+        where: { id },
+        data: {
+          name: dto.name?.trim(),
+          phone: dto.phone?.trim(),
+          roleId: dto.roleId,
+          branchId: dto.branchId,
+        },
+        select: userSelect,
+      });
+      if (dto.branchId) {
+        await tx.userBranchMembership.updateMany({
+          where: { companyId: user.companyId, userId: id },
+          data: { isDefault: false },
+        });
+        await tx.userBranchMembership.upsert({
+          where: { userId_branchId: { userId: id, branchId: dto.branchId } },
+          update: { isDefault: true },
+          create: {
+            companyId: user.companyId,
+            userId: id,
+            branchId: dto.branchId,
+            isDefault: true,
+          },
+        });
+      }
+      return nextUser;
     });
     await this.audit.create({
       companyId: user.companyId,

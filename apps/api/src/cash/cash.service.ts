@@ -80,7 +80,7 @@ export class CashService {
     const where: Prisma.CashSessionWhereInput = {
       companyId: user.companyId,
       status: query.status,
-      branchId: query.branchId,
+      branchId: user.branchId ?? query.branchId,
       openedAt:
         query.dateFrom || query.dateTo
           ? {
@@ -108,7 +108,11 @@ export class CashService {
 
   async findOne(user: AuthUser, id: string) {
     const session = await this.prisma.cashSession.findFirst({
-      where: { id, companyId: user.companyId },
+      where: {
+        id,
+        companyId: user.companyId,
+        branchId: user.branchId ?? undefined,
+      },
       include: cashSessionDetailInclude,
     });
     if (!session) throw new NotFoundException('Caja no encontrada');

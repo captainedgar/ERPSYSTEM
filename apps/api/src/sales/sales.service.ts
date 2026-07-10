@@ -25,6 +25,7 @@ import { SalesQueryDto } from './dto/sales-query.dto';
 
 const saleSummaryInclude = {
   customer: { select: { id: true, name: true, documentNumber: true } },
+  branch: { select: { id: true, code: true, name: true } },
   createdBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.SaleInclude;
 
@@ -76,6 +77,7 @@ export class SalesService {
     const search = query.search?.trim();
     const where: Prisma.SaleWhereInput = {
       companyId: user.companyId,
+      branchId: user.branchId ?? undefined,
       status: query.status,
       customerId: query.customerId,
       createdAt:
@@ -123,7 +125,11 @@ export class SalesService {
 
   async findOne(user: AuthUser, id: string) {
     const sale = await this.prisma.sale.findFirst({
-      where: { id, companyId: user.companyId },
+      where: {
+        id,
+        companyId: user.companyId,
+        branchId: user.branchId ?? undefined,
+      },
       include: saleDetailInclude,
     });
     if (!sale) throw new NotFoundException('Venta no encontrada');

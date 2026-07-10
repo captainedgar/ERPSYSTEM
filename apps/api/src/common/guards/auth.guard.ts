@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { BranchStatus, UserRole } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
@@ -75,10 +76,17 @@ export class AuthGuard implements CanActivate {
         },
       });
       if (!session) throw new Error('Session revoked');
+      const activeBranchId = await this.resolveActiveBranch(
+        request,
+        session.user.id,
+        session.user.companyId,
+        session.user.branchId,
+        session.user.role.code,
+      );
       request.user = {
         userId: session.user.id,
         companyId: session.user.companyId,
-        branchId: session.user.branchId,
+        branchId: activeBranchId,
         roleId: session.user.role.id,
         roleCode: session.user.role.code,
         companyStatus: session.user.company.status,
@@ -88,5 +96,90 @@ export class AuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');
     }
+  }
+
+  private async resolveActiveBranch(
+    request: Request,
+    userId: string,
+    companyId: string,
+    defaultBranchId: string | null,
+    roleCode: UserRole,
+  ) {
+    const requestedBranchId = request.header('x-branch-id')?.trim();
+    if (requestedBranchId) {
+      return this.validateBranchAccess(
+        requestedBranchId,
+        userId,
+        companyId,
+        roleCode,
+      );
+    }
+
+    if (defaultBranchId) {
+      const branch = await this.prisma.branch.findFirst({
+        where: {
+          id: defaultBranchId,
+          companyId,
+          deletedAt: null,
+          status: BranchStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      if (branch) return branch.id;
+    }
+
+    const membership = await this.prisma.userBranchMembership.findFirst({
+      where: {
+        companyId,
+        userId,
+        branch: { status: BranchStatus.ACTIVE, deletedAt: null },
+      },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: { branchId: true },
+    });
+    if (membership) return membership.branchId;
+
+    const main = await this.prisma.branch.findFirst({
+      where: {
+        companyId,
+        deletedAt: null,
+        status: BranchStatus.ACTIVE,
+        isMain: true,
+      },
+      select: { id: true },
+    });
+    return main?.id ?? null;
+  }
+
+  private async validateBranchAccess(
+    branchId: string,
+    userId: string,
+    companyId: string,
+    roleCode: UserRole,
+  ) {
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        companyId,
+        deletedAt: null,
+        status: BranchStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        users: { where: { id: userId }, select: { id: true } },
+        userMemberships: {
+          where: { userId },
+          select: { id: true },
+        },
+      },
+    });
+    if (!branch) throw new UnauthorizedException('Invalid active branch');
+    if (roleCode === UserRole.OWNER || roleCode === UserRole.ADMIN) {
+      return branch.id;
+    }
+    if (branch.users.length || branch.userMemberships.length) {
+      return branch.id;
+    }
+    throw new UnauthorizedException('Branch not allowed for user');
   }
 }
