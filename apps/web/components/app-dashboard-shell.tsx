@@ -6,17 +6,29 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 
-const navItems = [
-  { href: '/dashboard', label: 'Panel', marker: 'PA' },
-  { href: '/pos', label: 'POS', marker: 'PO' },
-  { href: '/sales', label: 'Ventas', marker: 'VE' },
-  { href: '/cash', label: 'Caja', marker: 'CJ' },
-  { href: '/customers', label: 'Clientes', marker: 'CL' },
-  { href: '/catalog/products', label: 'Catalogo', marker: 'CA' },
-  { href: '/inventory', label: 'Inventario', marker: 'IN' },
-  { href: '/internal-documents', label: 'Docs internos', marker: 'DI' },
-  { href: '/settings/business', label: 'Configuracion', marker: 'CO' },
+const navGroups = [
+  {
+    label: 'Operacion',
+    items: [
+      { href: '/dashboard', label: 'Panel', marker: 'PA' },
+      { href: '/pos', label: 'POS', marker: 'PO' },
+      { href: '/sales', label: 'Ventas', marker: 'VE' },
+      { href: '/cash', label: 'Caja', marker: 'CJ' },
+    ],
+  },
+  {
+    label: 'Administracion',
+    items: [
+      { href: '/customers', label: 'Clientes', marker: 'CL' },
+      { href: '/catalog/products', label: 'Catalogo', marker: 'CA' },
+      { href: '/inventory', label: 'Inventario', marker: 'IN' },
+      { href: '/internal-documents', label: 'Docs internos', marker: 'DI' },
+      { href: '/settings/business', label: 'Configuracion', marker: 'CO' },
+    ],
+  },
 ];
+
+const navItems = navGroups.flatMap((group) => group.items);
 
 const dashboardPrefixes = [
   '/dashboard',
@@ -52,17 +64,38 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
           </h1>
         </Link>
 
-        <nav className="mt-8 grid gap-2">
-          {navItems.map((item) => (
-            <NavItem
-              active={isActive(pathname, item.href)}
-              href={item.href}
-              key={item.href}
-              label={item.label}
-              marker={item.marker}
-            />
+        <nav className="mt-8 grid gap-7">
+          {navGroups.map((group) => (
+            <div key={group.label}>
+              <p className="px-3 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+                {group.label}
+              </p>
+              <div className="mt-2 grid gap-1">
+                {group.items.map((item) => (
+                  <NavItem
+                    active={isActive(pathname, item.href)}
+                    href={item.href}
+                    key={item.href}
+                    label={item.label}
+                    marker={item.marker}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
+
+        <div className="absolute right-5 bottom-5 left-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+            Empresa activa
+          </p>
+          <p className="mt-2 truncate text-sm font-semibold text-slate-950">
+            {user?.company.name ?? 'Sin empresa'}
+          </p>
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {user?.branch?.name ?? 'Sucursal principal'}
+          </p>
+        </div>
       </aside>
 
       <div className="lg:pl-72">
@@ -117,7 +150,7 @@ function NavItem({
 }) {
   return (
     <Link
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
         active
           ? 'bg-blue-600 text-white shadow-sm'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
@@ -125,7 +158,7 @@ function NavItem({
       href={href}
     >
       <span
-        className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-bold ${
+        className={`grid h-8 w-8 place-items-center rounded-md text-[11px] font-bold ${
           active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
         }`}
       >
