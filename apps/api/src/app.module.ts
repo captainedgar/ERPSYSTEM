@@ -20,6 +20,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { PosModule } from './pos/pos.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProductImportModule } from './product-import/product-import.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { InternalDocumentsModule } from './internal-documents/internal-documents.module';
 import { ProductsModule } from './products/products.module';
@@ -60,6 +61,7 @@ import { UsersModule } from './users/users.module';
     BrandsModule,
     UnitsModule,
     ProductsModule,
+    ProductImportModule,
     ServicesModule,
     ReportsModule,
   ],

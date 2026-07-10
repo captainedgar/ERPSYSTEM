@@ -39,6 +39,7 @@ import {
   type Unit,
 } from '@prisma/client';
 import { hash } from 'bcrypt';
+import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -4369,6 +4370,203 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ).toBe(7);
   });
 
+  it('imports products from Excel with validation, permissions and branch isolation', async () => {
+    const companyA = await registerCompany('product-import-a');
+    const companyB = await registerCompany('product-import-b');
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Importacion', code: 'IMP' },
+      companyA.accessToken,
+    );
+    const existing = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Existente importacion', sku: 'EXIST-001', price: 10 },
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'import-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'import-warehouse',
+      ),
+    ]);
+    const [cashierSession, warehouseSession] = await Promise.all([
+      login(cashier.email),
+      login(warehouse.email),
+    ]);
+    const template = await downloadProductImportTemplate(
+      warehouseSession.accessToken,
+    );
+    const forbidden = await uploadProductImport(
+      '/products/import/preview',
+      await productImportWorkbook([
+        ['Producto sin permiso', 'NO-IMPORT', '', '', '', '', 0, 20],
+      ]),
+      cashierSession.accessToken,
+    );
+    const missingColumns = await uploadProductImport(
+      '/products/import/preview',
+      await customWorkbook([['sku'], ['SIN-NOMBRE']]),
+      warehouseSession.accessToken,
+    );
+    const invalidPreview = await uploadProductImport<{
+      invalidRows: number;
+      errors: string[];
+      previewRows: Array<{ errors: string[] }>;
+    }>(
+      '/products/import/preview',
+      await productImportWorkbook([
+        ['Precio invalido', 'BAD-PRICE', '', '', '', '', 0, -1],
+        ['Duplicado archivo A', 'DUP-001', '', '', '', '', 0, 30],
+        ['Duplicado archivo B', 'DUP-001', '', '', '', '', 0, 35],
+        ['Duplicado barcode A', 'BAR-A', '746111111111', '', '', '', 0, 40],
+        ['Duplicado barcode B', 'BAR-B', '746111111111', '', '', '', 0, 45],
+        ['SKU existente', 'EXIST-001', '', '', '', '', 0, 50],
+      ]),
+      warehouseSession.accessToken,
+    );
+    const validFile = await productImportWorkbook([
+      [
+        'Cafe importado',
+        'IMP-001',
+        '746222222221',
+        'Bebidas importadas',
+        'Marca importada',
+        'Unidad importada',
+        120,
+        200,
+        8,
+        2,
+        18,
+        'si',
+        'Desde Excel',
+      ],
+      [
+        'Galleta importada',
+        'IMP-002',
+        '746222222222',
+        'Snacks importados',
+        'Marca importada',
+        'Caja importada',
+        50,
+        90,
+        0,
+        1,
+        'no',
+        'si',
+        '',
+      ],
+    ]);
+    const preview = await uploadProductImport<{
+      validRows: number;
+      invalidRows: number;
+      createdCategoriesPreview: string[];
+      createdBrandsPreview: string[];
+      createdUnitsPreview: string[];
+      previewRows: Array<{ status: string; warnings: string[] }>;
+    }>('/products/import/preview', validFile, companyA.accessToken, {
+      'X-Branch-Id': branch.body.id,
+    });
+    const committed = await uploadProductImport<{
+      productsCreated: number;
+      inventoryMovementsCreated: number;
+      createdProducts: Array<{ id: string; name: string }>;
+    }>('/products/import/commit', validFile, companyA.accessToken, {
+      'X-Branch-Id': branch.body.id,
+    });
+    const importedProducts = await prisma.product.findMany({
+      where: {
+        companyId: companyA.company.id,
+        sku: { in: ['IMP-001', 'IMP-002'] },
+      },
+      include: { category: true, brand: true, unit: true },
+      orderBy: { sku: 'asc' },
+    });
+    const foreignProducts = await prisma.product.count({
+      where: {
+        companyId: companyB.company.id,
+        sku: { in: ['IMP-001', 'IMP-002'] },
+      },
+    });
+    const initialMovement = await prisma.inventoryMovement.findFirst({
+      where: {
+        companyId: companyA.company.id,
+        productId: importedProducts[0]?.id,
+      },
+    });
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: {
+          companyId: companyA.company.id,
+          module: { in: ['products', 'inventory'] },
+        },
+        select: { action: true, metadataJson: true },
+      })
+    ).map(
+      ({ action, metadataJson }) => `${action}:${JSON.stringify(metadataJson)}`,
+    );
+
+    expect(existing.status).toBe(201);
+    expect(template.status).toBe(200);
+    expect(forbidden.status).toBe(403);
+    expect(missingColumns.status).toBe(400);
+    expect(JSON.stringify(missingColumns.body)).toContain('nombre');
+    expect(invalidPreview.status).toBe(201);
+    expect(invalidPreview.body.invalidRows).toBe(6);
+    expect(JSON.stringify(invalidPreview.body.errors)).toContain('precio');
+    expect(JSON.stringify(invalidPreview.body.errors)).toContain(
+      'SKU duplicado',
+    );
+    expect(JSON.stringify(invalidPreview.body.errors)).toContain(
+      'Código de barras duplicado',
+    );
+    expect(JSON.stringify(invalidPreview.body.errors)).toContain('EXIST-001');
+    expect(preview.status).toBe(201);
+    expect(preview.body.validRows).toBe(2);
+    expect(preview.body.invalidRows).toBe(0);
+    expect(preview.body.createdCategoriesPreview).toEqual(
+      expect.arrayContaining(['Bebidas importadas', 'Snacks importados']),
+    );
+    expect(preview.body.createdBrandsPreview).toEqual(['Marca importada']);
+    expect(preview.body.createdUnitsPreview).toEqual(
+      expect.arrayContaining(['Unidad importada', 'Caja importada']),
+    );
+    expect(
+      preview.body.previewRows.every(({ status }) => status === 'WARNING'),
+    ).toBe(true);
+    expect(committed.status).toBe(201);
+    expect(committed.body.productsCreated).toBe(2);
+    expect(committed.body.inventoryMovementsCreated).toBe(1);
+    expect(importedProducts).toHaveLength(2);
+    expect(importedProducts[0]?.companyId).toBe(companyA.company.id);
+    expect(importedProducts[0]?.category?.name).toBe('Bebidas importadas');
+    expect(importedProducts[0]?.brand?.name).toBe('Marca importada');
+    expect(importedProducts[0]?.unit?.name).toBe('Unidad importada');
+    expect(Number(importedProducts[0]?.stock)).toBe(8);
+    expect(foreignProducts).toBe(0);
+    expect(initialMovement?.branchId).toBe(branch.body.id);
+    expect(initialMovement?.type).toBe(InventoryMovementType.MANUAL_ENTRY);
+    expect(initialMovement?.reason).toBe('Importación Excel');
+    expect(auditActions.join('|')).toContain('PRODUCT_IMPORT_PREVIEWED');
+    expect(auditActions.join('|')).toContain('PRODUCT_IMPORT_COMPLETED');
+    expect(auditActions.join('|')).toContain('PRODUCT_CREATED_FROM_IMPORT');
+    expect(auditActions.join('|')).toContain(
+      'INVENTORY_INITIAL_STOCK_IMPORTED',
+    );
+    expect(auditActions.join('|')).not.toContain('passwordHash');
+    expect(auditActions.join('|')).not.toContain('refreshToken');
+  });
+
   it('validates catalog data, permissions and multi-company isolation', async () => {
     const companyA = await registerCompany('catalog-a');
     const companyB = await registerCompany('catalog-b');
@@ -4998,6 +5196,74 @@ async function uploadLogo(
       logoUpdatedAt: string | null;
     },
   };
+}
+
+async function downloadProductImportTemplate(accessToken: string) {
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  const response = await fetch(`${apiBaseUrl}/products/import/template`, {
+    method: 'GET',
+    headers,
+  });
+  await response.arrayBuffer();
+  return { status: response.status };
+}
+
+async function uploadProductImport<T = unknown>(
+  path: string,
+  bytes: Uint8Array,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  const formData = new FormData();
+  formData.set(
+    'file',
+    new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    'productos.xlsx',
+  );
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  const text = await response.text();
+  const parsed: unknown = text ? JSON.parse(text) : undefined;
+  return { status: response.status, body: parsed as T };
+}
+
+async function productImportWorkbook(rows: unknown[][]) {
+  return customWorkbook([
+    [
+      'nombre',
+      'sku',
+      'codigo_barras',
+      'categoria',
+      'marca',
+      'unidad',
+      'costo',
+      'precio',
+      'stock_inicial',
+      'stock_minimo',
+      'itbis',
+      'activo',
+      'descripcion',
+    ],
+    ...rows,
+  ]);
+}
+
+async function customWorkbook(rows: unknown[][]) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Productos');
+  rows.forEach((row) => sheet.addRow(row));
+  return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 
 function pngBytes() {

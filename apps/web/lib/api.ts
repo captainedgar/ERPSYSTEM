@@ -1,4 +1,4 @@
-const API_URL =
+export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.API_URL ??
   'http://localhost:3001';
@@ -88,7 +88,11 @@ export async function apiRequest<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const headers = new Headers(init.headers);
-  if (!headers.has('Content-Type') && init.body !== undefined) {
+  if (
+    !headers.has('Content-Type') &&
+    init.body !== undefined &&
+    !(init.body instanceof FormData)
+  ) {
     headers.set('Content-Type', 'application/json');
   }
   const accessToken = getStoredAccessToken();

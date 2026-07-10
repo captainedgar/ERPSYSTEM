@@ -32,6 +32,7 @@ export const PERMISSIONS = [
   ['products.create', 'products', PermissionAction.CREATE],
   ['products.update', 'products', PermissionAction.UPDATE],
   ['products.disable', 'products', PermissionAction.DISABLE],
+  ['products.import', 'products', PermissionAction.CREATE],
   ['services.view', 'services', PermissionAction.VIEW],
   ['services.create', 'services', PermissionAction.CREATE],
   ['services.update', 'services', PermissionAction.UPDATE],

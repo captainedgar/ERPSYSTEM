@@ -268,12 +268,22 @@ export function CatalogManager({ kind }: { kind: CatalogKind }) {
               Administra el catálogo de tu empresa sin afectar inventario.
             </p>
           </div>
-          <Link
-            className="text-sm text-slate-600 hover:text-slate-950"
-            href="/dashboard"
-          >
-            Volver al panel
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {kind === 'products' && (
+              <Link
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                href="/catalog/products/import"
+              >
+                Importar Excel
+              </Link>
+            )}
+            <Link
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-950"
+              href="/dashboard"
+            >
+              Volver al panel
+            </Link>
+          </div>
         </header>
 
         <nav className="mt-6 flex flex-wrap gap-2">

@@ -79,6 +79,7 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'products.view',
     'products.create',
     'products.update',
+    'products.import',
     'inventory.view',
     'inventory.adjust',
     'inventory.view_movements',
