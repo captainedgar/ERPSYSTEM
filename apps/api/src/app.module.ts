@@ -23,6 +23,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { InternalDocumentsModule } from './internal-documents/internal-documents.module';
 import { ProductsModule } from './products/products.module';
+import { ReportsModule } from './reports/reports.module';
 import { RolesModule } from './roles/roles.module';
 import { SalesModule } from './sales/sales.module';
 import { ServicesModule } from './services/services.module';
@@ -60,6 +61,7 @@ import { UsersModule } from './users/users.module';
     UnitsModule,
     ProductsModule,
     ServicesModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [

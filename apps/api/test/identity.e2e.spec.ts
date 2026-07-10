@@ -2755,6 +2755,282 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(crossRead.status).toBe(404);
   });
 
+  it('reports operational metrics with permissions and tenant branch isolation', async () => {
+    const companyA = await registerCompany('reports-tenant-a');
+    const companyB = await registerCompany('reports-tenant-b');
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Reportes Norte', code: 'RNOR' },
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'reports-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'reports-warehouse',
+      ),
+    ]);
+    const [cashierSession, warehouseSession] = await Promise.all([
+      login(cashier.email),
+      login(warehouse.email),
+    ]);
+    const [customer, mainProduct, branchProduct, foreignProduct] =
+      await Promise.all([
+        http<Customer>(
+          'POST',
+          '/customers',
+          basicCustomerPayload('Cliente reporte'),
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto reporte principal',
+            price: 100,
+            taxRate: 0,
+            stock: 2,
+            minStock: 5,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto reporte sucursal',
+            price: 50,
+            taxRate: 0,
+            stock: 10,
+            minStock: 1,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto reporte externo',
+            price: 80,
+            taxRate: 0,
+            stock: 5,
+            minStock: 10,
+            trackInventory: true,
+          },
+          companyB.accessToken,
+        ),
+      ]);
+    await Promise.all([
+      openCash(companyA.accessToken, companyA.branch.id, 25),
+      openCash(companyA.accessToken, branch.body.id, 15, {
+        'X-Branch-Id': branch.body.id,
+      }),
+      openCash(companyB.accessToken, companyB.branch.id, 30),
+    ]);
+    const salePayloadWithCustomer = {
+      ...salePayload(PosItemType.PRODUCT, mainProduct.body.id, 2, 200),
+      customerId: customer.body.id,
+    };
+    const [mainSale, branchSale, foreignSale] = await Promise.all([
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        salePayloadWithCustomer,
+        companyA.accessToken,
+      ),
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        salePayload(PosItemType.PRODUCT, branchProduct.body.id, 1, 50),
+        companyA.accessToken,
+        { 'X-Branch-Id': branch.body.id },
+      ),
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        salePayload(PosItemType.PRODUCT, foreignProduct.body.id, 1, 80),
+        companyB.accessToken,
+      ),
+    ]);
+    const receipt = await http<{ id: string }>(
+      'POST',
+      `/internal-documents/from-sale/${mainSale.body.id}`,
+      { documentType: InternalDocumentType.RECEIPT },
+      companyA.accessToken,
+    );
+    const from = encodeURIComponent(
+      new Date(Date.now() - 86_400_000).toISOString(),
+    );
+    const to = encodeURIComponent(
+      new Date(Date.now() + 86_400_000).toISOString(),
+    );
+    const query = `?from=${from}&to=${to}`;
+
+    const [
+      overview,
+      branchOverview,
+      sales,
+      byDay,
+      byUser,
+      topProducts,
+      cash,
+      customers,
+      lowStock,
+      documents,
+      warehouseSales,
+      warehouseInventory,
+      cashierInventory,
+    ] = await Promise.all([
+      http<{
+        totalSales: number;
+        salesCount: number;
+        cashTotal: number;
+        customersCount: number;
+        lowStockCount: number;
+        internalDocumentsCount: number;
+        activeBranch: { id: string };
+      }>('GET', `/reports/overview${query}`, undefined, companyA.accessToken),
+      http<{ totalSales: number; salesCount: number }>(
+        'GET',
+        `/reports/overview${query}`,
+        undefined,
+        companyA.accessToken,
+        { 'X-Branch-Id': branch.body.id },
+      ),
+      http<{ total: number; count: number; items: Array<{ id: string }> }>(
+        'GET',
+        `/reports/sales${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ salesCount: number; total: number }> }>(
+        'GET',
+        `/reports/sales/by-day${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ salesCount: number; total: number }> }>(
+        'GET',
+        `/reports/sales/by-user${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{
+        items: Array<{ name: string; quantitySold: number; totalSold: number }>;
+      }>(
+        'GET',
+        `/reports/sales/top-products${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{
+        sessionsCount: number;
+        cashSalesTotal: number;
+        sessions: unknown[];
+      }>('GET', `/reports/cash${query}`, undefined, companyA.accessToken),
+      http<{ totalCustomers: number; topCustomersBySales: unknown[] }>(
+        'GET',
+        `/reports/customers${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ productId: string; name: string }> }>(
+        'GET',
+        '/reports/inventory/low-stock',
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ totalDocuments: number; recentDocuments: Array<{ id: string }> }>(
+        'GET',
+        `/reports/documents${query}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<unknown>(
+        'GET',
+        `/reports/sales${query}`,
+        undefined,
+        warehouseSession.accessToken,
+      ),
+      http<unknown>(
+        'GET',
+        '/reports/inventory/low-stock',
+        undefined,
+        warehouseSession.accessToken,
+      ),
+      http<unknown>(
+        'GET',
+        '/reports/inventory/low-stock',
+        undefined,
+        cashierSession.accessToken,
+      ),
+    ]);
+    const reportText = JSON.stringify({
+      overview: overview.body,
+      sales: sales.body,
+      cash: cash.body,
+      documents: documents.body,
+    });
+
+    expect(branch.status).toBe(201);
+    expect(mainSale.status).toBe(201);
+    expect(branchSale.status).toBe(201);
+    expect(foreignSale.status).toBe(201);
+    expect(receipt.status).toBe(201);
+    expect(overview.status).toBe(200);
+    expect(overview.body.totalSales).toBe(200);
+    expect(overview.body.salesCount).toBe(1);
+    expect(overview.body.cashTotal).toBe(200);
+    expect(overview.body.activeBranch.id).toBe(companyA.branch.id);
+    expect(branchOverview.status).toBe(200);
+    expect(branchOverview.body.totalSales).toBe(50);
+    expect(branchOverview.body.salesCount).toBe(1);
+    expect(sales.body.items.map(({ id }) => id)).toEqual([mainSale.body.id]);
+    expect(byDay.body.items[0]).toEqual(
+      expect.objectContaining({ salesCount: 1, total: 200 }),
+    );
+    expect(byUser.body.items[0]).toEqual(
+      expect.objectContaining({ salesCount: 1, total: 200 }),
+    );
+    expect(topProducts.body.items[0]).toEqual(
+      expect.objectContaining({
+        name: 'Producto reporte principal',
+        quantitySold: 2,
+        totalSold: 200,
+      }),
+    );
+    expect(cash.body.sessionsCount).toBe(1);
+    expect(cash.body.cashSalesTotal).toBe(200);
+    expect(customers.body.totalCustomers).toBe(1);
+    expect(customers.body.topCustomersBySales).toHaveLength(1);
+    expect(lowStock.body.items.map(({ productId }) => productId)).toContain(
+      mainProduct.body.id,
+    );
+    expect(lowStock.body.items.map(({ productId }) => productId)).not.toContain(
+      foreignProduct.body.id,
+    );
+    expect(documents.body.totalDocuments).toBe(1);
+    expect(documents.body.recentDocuments.map(({ id }) => id)).toContain(
+      receipt.body.id,
+    );
+    expect(warehouseSales.status).toBe(403);
+    expect(warehouseInventory.status).toBe(200);
+    expect(cashierInventory.status).toBe(403);
+    expect(reportText).not.toContain('passwordHash');
+    expect(reportText).not.toContain('refreshToken');
+  });
+
   it('creates, prints, voids and isolates internal non-fiscal documents', async () => {
     const companyA = await registerCompany('internal-documents-a');
     const companyB = await registerCompany('internal-documents-b');
@@ -4513,12 +4789,19 @@ async function openCash(
   accessToken: string,
   branchId: string,
   openingAmount: number,
+  extraHeaders: Record<string, string> = {},
 ) {
   const response = await http<{
     id: string;
     status: CashSessionStatus;
     expectedCashAmount: string;
-  }>('POST', '/cash/open', { branchId, openingAmount }, accessToken);
+  }>(
+    'POST',
+    '/cash/open',
+    { branchId, openingAmount },
+    accessToken,
+    extraHeaders,
+  );
   expect(response.status).toBe(201);
   return response.body;
 }

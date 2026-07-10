@@ -36,6 +36,10 @@ const navGroups = [
       { href: '/settings/branches', label: 'Sucursales', marker: 'SU' },
     ],
   },
+  {
+    label: 'Analitica',
+    items: [{ href: '/reports', label: 'Reportes', marker: 'RE' }],
+  },
 ];
 
 const navItems = navGroups.flatMap((group) => group.items);
@@ -49,6 +53,7 @@ const dashboardPrefixes = [
   '/catalog',
   '/inventory',
   '/internal-documents',
+  '/reports',
   '/settings',
   '/fiscal',
 ];

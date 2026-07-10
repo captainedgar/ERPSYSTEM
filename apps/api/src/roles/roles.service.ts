@@ -38,6 +38,9 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'cash.close',
     'cash.manual_movement',
     'cash.view_sessions',
+    'reports.view',
+    'reports.sales',
+    'reports.cash',
   ],
   SELLER: [
     'branches.view',
@@ -59,6 +62,8 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'internal_documents.create',
     'internal_documents.print',
     'cash.view',
+    'reports.view',
+    'reports.sales',
   ],
   WAREHOUSE: [
     'branches.view',
@@ -78,6 +83,8 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'inventory.adjust',
     'inventory.view_movements',
     'inventory.view_low_stock',
+    'reports.view',
+    'reports.inventory',
   ],
   ACCOUNTING: [
     'companies.view',
@@ -106,6 +113,11 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'fiscal.documents.view_errors',
     'cash.view',
     'cash.view_sessions',
+    'reports.view',
+    'reports.sales',
+    'reports.cash',
+    'reports.documents',
+    'reports.customers',
   ],
 };
 
