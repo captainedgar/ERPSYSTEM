@@ -147,7 +147,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
       <main className="grid min-h-screen place-items-center px-5 text-center">
         <div>
           <p className="text-lg font-medium">Necesitas iniciar sesión.</p>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-slate-500">
             Redirigiendo al acceso del sistema…
           </p>
         </div>
@@ -166,32 +166,35 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Inventario · Comercia ERP
             </p>
             <h1 className="mt-1 text-3xl font-semibold">
               {mode === 'low-stock' ? 'Productos bajo mínimo' : 'Inventario'}
             </h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Controla existencias, ajustes y entradas manuales por producto.
             </p>
           </div>
           <div className="flex gap-4 text-sm">
-            <Link className="text-slate-300 hover:text-white" href="/dashboard">
+            <Link
+              className="text-slate-600 hover:text-slate-950"
+              href="/dashboard"
+            >
               Volver al panel
             </Link>
             {mode === 'low-stock' ? (
               <Link
-                className="text-emerald-400 hover:text-emerald-300"
+                className="text-blue-600 hover:text-blue-700"
                 href="/inventory"
               >
                 Ver inventario completo
               </Link>
             ) : (
               <Link
-                className="text-emerald-400 hover:text-emerald-300"
+                className="text-blue-600 hover:text-blue-700"
                 href="/inventory/low-stock"
               >
                 Ver bajo stock
@@ -202,11 +205,11 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[360px_1fr]">
           <form
-            className="h-fit rounded-3xl border border-slate-800 bg-slate-950 p-6"
+            className="h-fit rounded-3xl border border-slate-200 bg-white p-6"
             onSubmit={(event) => void submit(event)}
           >
             <h2 className="text-xl font-semibold">Registrar movimiento</h2>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-slate-500">
               {form.productId
                 ? `Producto seleccionado: ${form.productName}`
                 : 'Selecciona una acción desde la lista para completar el movimiento.'}
@@ -267,7 +270,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
               <label>
                 Motivo
                 <textarea
-                  className="min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white"
+                  className="min-h-28 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-slate-950"
                   disabled={!form.productId}
                   maxLength={500}
                   required
@@ -282,9 +285,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
               </label>
             </div>
             {error && <p className="mt-4 text-sm text-rose-400">{error}</p>}
-            {message && (
-              <p className="mt-4 text-sm text-emerald-400">{message}</p>
-            )}
+            {message && <p className="mt-4 text-sm text-blue-600">{message}</p>}
             <div className="mt-5 flex gap-2">
               <Button disabled={submitting || !form.productId} type="submit">
                 {submitting ? 'Guardando…' : 'Guardar movimiento'}
@@ -301,7 +302,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
             </div>
           </form>
 
-          <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6">
             <form
               className="flex flex-col gap-3 sm:flex-row"
               onSubmit={(event) => {
@@ -318,7 +319,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                 onChange={(event) => setSearch(event.target.value)}
               />
               {mode !== 'low-stock' && (
-                <label className="flex items-center gap-2 rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-300">
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
                   <input
                     checked={onlyLowStock}
                     onChange={(event) => setOnlyLowStock(event.target.checked)}
@@ -334,7 +335,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
 
             <div className="mt-5 grid gap-3">
               {error && !items.length && (
-                <div className="rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200">
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
                   <p>{error}</p>
                   <Button
                     className="mt-3"
@@ -361,7 +362,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                   Number(product.stock) <= Number(product.minStock);
                 return (
                   <article
-                    className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                     key={product.id}
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -374,7 +375,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-sm text-slate-400">
+                        <p className="mt-1 text-sm text-slate-500">
                           Stock actual {Number(product.stock)} · mínimo{' '}
                           {Number(product.minStock)} ·{' '}
                           {product.unit?.name ?? 'Sin unidad'}
@@ -385,7 +386,7 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                         </p>
                       </div>
                       <Link
-                        className="text-sm font-medium text-emerald-400 hover:text-emerald-300"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700"
                         href={`/inventory/products/${product.id}/movements`}
                       >
                         Ver movimientos

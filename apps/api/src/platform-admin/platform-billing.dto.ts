@@ -2,6 +2,7 @@ import {
   CompanySubscriptionStatus,
   Currency,
   SaasBillingInterval,
+  SubscriptionInvoiceStatus,
   SubscriptionPaymentMethod,
 } from '@prisma/client';
 import {
@@ -161,4 +162,69 @@ export class RegisterSubscriptionPaymentDto {
   @IsOptional()
   @IsDateString()
   nextPaymentDueAt?: string;
+
+  @IsOptional()
+  @IsString()
+  subscriptionInvoiceId?: string;
+}
+
+export class CreateSubscriptionInvoiceDto {
+  @IsString()
+  companyId!: string;
+
+  @IsOptional()
+  @IsString()
+  companySubscriptionId?: string;
+
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
+  @IsDateString()
+  billingPeriodStart!: string;
+
+  @IsDateString()
+  billingPeriodEnd!: string;
+
+  @IsDateString()
+  dueDate!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  subtotal?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  total?: number;
+
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
+
+  @IsOptional()
+  @IsEnum(SubscriptionInvoiceStatus)
+  status?: SubscriptionInvoiceStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class VoidSubscriptionInvoiceDto {
+  @IsString()
+  @MaxLength(500)
+  voidReason!: string;
 }

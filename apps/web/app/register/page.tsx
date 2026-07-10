@@ -79,16 +79,16 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
       <form
-        className="rounded-3xl border border-slate-800 bg-slate-950 p-8"
+        className="rounded-3xl border border-slate-200 bg-white p-8"
         onSubmit={(event) => void submit(event)}
       >
-        <p className="text-sm font-semibold text-emerald-400">Comercia ERP</p>
+        <p className="text-sm font-semibold text-blue-600">Comercia ERP</p>
         <h1 className="mt-3 text-3xl font-semibold">Registra tu empresa</h1>
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-slate-500">
           Crearemos la sucursal principal y tu usuario propietario.
         </p>
 
-        <h2 className="mt-9 border-b border-slate-800 pb-3 font-semibold">
+        <h2 className="mt-9 border-b border-slate-200 pb-3 font-semibold">
           Datos del negocio
         </h2>
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -128,7 +128,7 @@ export default function RegisterPage() {
           </label>
         </div>
 
-        <h2 className="mt-9 border-b border-slate-800 pb-3 font-semibold">
+        <h2 className="mt-9 border-b border-slate-200 pb-3 font-semibold">
           Usuario propietario
         </h2>
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -157,9 +157,9 @@ export default function RegisterPage() {
         <Button className="mt-7 w-full" disabled={submitting} type="submit">
           {submitting ? 'Creando empresa…' : 'Crear empresa'}
         </Button>
-        <p className="mt-6 text-center text-sm text-slate-400">
+        <p className="mt-6 text-center text-sm text-slate-500">
           ¿Ya tienes cuenta?{' '}
-          <Link className="text-emerald-400" href="/login">
+          <Link className="text-blue-600" href="/login">
             Inicia sesión
           </Link>
         </p>

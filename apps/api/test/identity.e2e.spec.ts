@@ -26,6 +26,7 @@ import {
   SaleStatus,
   SaasBillingInterval,
   SubscriptionEventType,
+  SubscriptionInvoiceStatus,
   SubscriptionPaymentMethod,
   TaxpayerType,
   UserRole,
@@ -1034,6 +1035,218 @@ describe('Identity and multi-company isolation (e2e)', () => {
       events.body,
       billingPayments.body,
       billingSubscriptions.body,
+    ]);
+  });
+
+  it('manages internal SaaS subscription invoices and invoice payments', async () => {
+    const company = await registerCompany('invoice-company');
+    const platformAdmin = await createPlatformUser(
+      'platform-invoice-super@example.test',
+      PlatformRole.SUPER_ADMIN,
+    );
+    const supportAdmin = await createPlatformUser(
+      'platform-invoice-support@example.test',
+      PlatformRole.SUPPORT_ADMIN,
+    );
+    const login = await platformLogin(platformAdmin.email);
+    const supportLogin = await platformLogin(supportAdmin.email);
+    const plan = await prisma.saasPlan.create({
+      data: {
+        name: 'Plan Invoice E2E',
+        price: 2000,
+        currency: 'DOP',
+        billingInterval: SaasBillingInterval.MONTHLY,
+        graceDays: 5,
+        modules: { pos: true },
+      },
+    });
+    const subscription = await prisma.companySubscription.create({
+      data: {
+        companyId: company.company.id,
+        planId: plan.id,
+        startsAt: new Date('2026-07-01'),
+        currentPeriodStart: new Date('2026-07-01'),
+        currentPeriodEnd: new Date('2026-08-01'),
+        nextPaymentDueAt: new Date('2026-08-01'),
+        graceDays: 5,
+      },
+    });
+
+    const supportCreateAttempt = await http<unknown>(
+      'POST',
+      '/platform/billing/invoices',
+      {
+        companyId: company.company.id,
+        billingPeriodStart: '2026-07-01',
+        billingPeriodEnd: '2026-08-01',
+        dueDate: '2026-08-01',
+      },
+      supportLogin.body.accessToken,
+    );
+    const invoice = await http<{
+      id: string;
+      invoiceNumber: string;
+      status: SubscriptionInvoiceStatus;
+      amountPaid: string;
+      balance: string;
+    }>(
+      'POST',
+      '/platform/billing/invoices',
+      {
+        companyId: company.company.id,
+        companySubscriptionId: subscription.id,
+        planId: plan.id,
+        billingPeriodStart: '2026-07-01',
+        billingPeriodEnd: '2026-08-01',
+        dueDate: '2026-08-01',
+      },
+      login.body.accessToken,
+    );
+    const secondInvoice = await http<{ invoiceNumber: string }>(
+      'POST',
+      '/platform/billing/invoices',
+      {
+        companyId: company.company.id,
+        billingPeriodStart: '2026-08-01',
+        billingPeriodEnd: '2026-09-01',
+        dueDate: '2026-09-01',
+      },
+      login.body.accessToken,
+    );
+    const partialPayment = await http<{
+      invoice: { status: SubscriptionInvoiceStatus; balance: string };
+    }>(
+      'POST',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      {
+        amount: 500,
+        currency: 'DOP',
+        method: SubscriptionPaymentMethod.BANK_TRANSFER,
+        paidAt: '2026-07-10',
+        subscriptionInvoiceId: invoice.body.id,
+      },
+      login.body.accessToken,
+    );
+    const finalPayment = await http<{
+      invoice: { status: SubscriptionInvoiceStatus; balance: string };
+    }>(
+      'POST',
+      `/platform/companies/${company.company.id}/subscription/payments`,
+      {
+        amount: 1500,
+        currency: 'DOP',
+        method: SubscriptionPaymentMethod.CASH,
+        paidAt: '2026-07-11',
+        subscriptionInvoiceId: invoice.body.id,
+      },
+      login.body.accessToken,
+    );
+    const voidPaidAttempt = await http<unknown>(
+      'POST',
+      `/platform/billing/invoices/${invoice.body.id}/void`,
+      { voidReason: 'No permitido' },
+      login.body.accessToken,
+    );
+    const voided = await http<{ status: SubscriptionInvoiceStatus }>(
+      'POST',
+      `/platform/billing/invoices/${secondInvoice.body.id}/void`,
+      { voidReason: 'Factura duplicada' },
+      login.body.accessToken,
+    );
+    const overdueInvoice = await http<{ id: string }>(
+      'POST',
+      '/platform/billing/invoices',
+      {
+        companyId: company.company.id,
+        billingPeriodStart: '2026-06-01',
+        billingPeriodEnd: '2026-07-01',
+        dueDate: '2026-07-01',
+      },
+      login.body.accessToken,
+    );
+    const overdue = await http<{ status: SubscriptionInvoiceStatus }>(
+      'POST',
+      `/platform/billing/invoices/${overdueInvoice.body.id}/mark-overdue`,
+      undefined,
+      login.body.accessToken,
+    );
+    const invoices = await http<Array<{ id: string }>>(
+      'GET',
+      '/platform/billing/invoices',
+      undefined,
+      login.body.accessToken,
+    );
+    const companyInvoices = await http<Array<{ id: string }>>(
+      'GET',
+      `/platform/companies/${company.company.id}/subscription/invoices`,
+      undefined,
+      login.body.accessToken,
+    );
+    const audit = await prisma.platformAuditLog.findMany({
+      where: { module: 'platform_billing' },
+      select: { action: true },
+    });
+    const events = await prisma.subscriptionEvent.findMany({
+      where: { companySubscriptionId: subscription.id },
+      select: { type: true },
+    });
+
+    expect(supportCreateAttempt.status).toBe(403);
+    expect(invoice.status).toBe(201);
+    expect(invoice.body.invoiceNumber).toMatch(/^SAA-\d{6}$/);
+    expect(secondInvoice.body.invoiceNumber).not.toBe(
+      invoice.body.invoiceNumber,
+    );
+    expect(invoice.body.status).toBe(SubscriptionInvoiceStatus.PENDING);
+    expect(partialPayment.body.invoice.status).toBe(
+      SubscriptionInvoiceStatus.PARTIALLY_PAID,
+    );
+    expect(Number(partialPayment.body.invoice.balance)).toBe(1500);
+    expect(finalPayment.body.invoice.status).toBe(
+      SubscriptionInvoiceStatus.PAID,
+    );
+    expect(Number(finalPayment.body.invoice.balance)).toBe(0);
+    expect(voidPaidAttempt.status).toBe(400);
+    expect(voided.body.status).toBe(SubscriptionInvoiceStatus.VOIDED);
+    expect(overdue.body.status).toBe(SubscriptionInvoiceStatus.OVERDUE);
+    expect(invoices.body.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        invoice.body.id,
+        secondInvoice.body.id,
+        overdueInvoice.body.id,
+      ]),
+    );
+    expect(companyInvoices.body.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        invoice.body.id,
+        secondInvoice.body.id,
+        overdueInvoice.body.id,
+      ]),
+    );
+    expect(audit.map(({ action }) => action)).toEqual(
+      expect.arrayContaining([
+        'SUBSCRIPTION_INVOICE_CREATED',
+        'SUBSCRIPTION_INVOICE_PARTIALLY_PAID',
+        'SUBSCRIPTION_INVOICE_PAID',
+        'SUBSCRIPTION_INVOICE_VOIDED',
+        'SUBSCRIPTION_INVOICE_OVERDUE',
+      ]),
+    );
+    expect(events.map(({ type }) => type)).toEqual(
+      expect.arrayContaining([
+        SubscriptionEventType.INVOICE_CREATED,
+        SubscriptionEventType.INVOICE_PARTIALLY_PAID,
+        SubscriptionEventType.INVOICE_PAID,
+        SubscriptionEventType.INVOICE_VOIDED,
+        SubscriptionEventType.INVOICE_OVERDUE,
+      ]),
+    );
+    expectNoSensitiveFields([
+      invoice.body,
+      partialPayment.body,
+      finalPayment.body,
+      invoices.body,
+      companyInvoices.body,
     ]);
   });
 
@@ -4133,6 +4346,8 @@ async function resetDatabase() {
   await prisma.$transaction([
     prisma.subscriptionEvent.deleteMany(),
     prisma.subscriptionPayment.deleteMany(),
+    prisma.subscriptionInvoice.deleteMany(),
+    prisma.subscriptionInvoiceSequence.deleteMany(),
     prisma.companySubscription.deleteMany(),
     prisma.saasPlan.deleteMany(),
     prisma.platformAuditLog.deleteMany(),

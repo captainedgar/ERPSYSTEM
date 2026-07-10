@@ -17,6 +17,7 @@ const nav = [
   { href: '/platform/companies', label: 'Empresas' },
   { href: '/platform/plans', label: 'Planes' },
   { href: '/platform/billing', label: 'Billing' },
+  { href: '/platform/billing/invoices', label: 'Facturas' },
   { href: '/platform/audit', label: 'Auditoria' },
 ];
 

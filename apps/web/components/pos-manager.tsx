@@ -351,13 +351,10 @@ export function PosManager() {
       <main className="grid min-h-screen place-items-center px-5 text-center">
         <div>
           <h1 className="text-2xl font-semibold">Acceso no disponible</h1>
-          <p className="mt-2 text-slate-400">
+          <p className="mt-2 text-slate-500">
             Tu rol no tiene permisos para usar el POS.
           </p>
-          <Link
-            className="mt-5 inline-block text-emerald-400"
-            href="/dashboard"
-          >
+          <Link className="mt-5 inline-block text-blue-600" href="/dashboard">
             Volver al panel
           </Link>
         </div>
@@ -368,18 +365,18 @@ export function PosManager() {
   return (
     <main className="min-h-screen px-5 py-7">
       <div className="mx-auto max-w-[1500px]">
-        <header className="flex flex-col gap-3 border-b border-slate-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Punto de venta · Comercia ERP
             </p>
             <h1 className="mt-1 text-3xl font-semibold">Carrito de venta</h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Valida y registra ventas internas con su pago e inventario.
             </p>
           </div>
           <Link
-            className="text-sm text-slate-300 hover:text-white"
+            className="text-sm text-slate-600 hover:text-slate-950"
             href="/dashboard"
           >
             Volver al panel
@@ -388,7 +385,7 @@ export function PosManager() {
 
         {error && (
           <div
-            className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+            className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
             role="alert"
           >
             {error}
@@ -397,7 +394,7 @@ export function PosManager() {
 
         {createdSale && (
           <div
-            className="mt-5 rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200"
+            className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-700"
             role="status"
           >
             Venta {createdSale.saleNumber} registrada correctamente.{' '}
@@ -411,7 +408,7 @@ export function PosManager() {
         )}
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(420px,0.65fr)]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5">
             <form
               className="grid gap-3 sm:grid-cols-[1fr_170px_auto]"
               onSubmit={(event: FormEvent) => {
@@ -444,7 +441,7 @@ export function PosManager() {
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               {searching ? (
-                <p className="col-span-full py-10 text-center text-slate-400">
+                <p className="col-span-full py-10 text-center text-slate-500">
                   Buscando artículos…
                 </p>
               ) : !results.length ? (
@@ -463,7 +460,7 @@ export function PosManager() {
             </div>
 
             {!searching && totalResults > 0 && (
-              <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4 text-sm text-slate-400">
+              <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-500">
                 <span>
                   Página {page} de{' '}
                   {Math.max(1, Math.ceil(totalResults / pageLimit))}
@@ -490,12 +487,12 @@ export function PosManager() {
             )}
           </section>
 
-          <section className="h-fit rounded-3xl border border-slate-800 bg-slate-950 p-5 xl:sticky xl:top-5">
+          <section className="h-fit rounded-3xl border border-slate-200 bg-white p-5 xl:sticky xl:top-5">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">Carrito ({cart.length})</h2>
               {cart.length > 0 && (
                 <button
-                  className="text-sm text-slate-400 hover:text-white"
+                  className="text-sm text-slate-500 hover:text-slate-950"
                   onClick={() => {
                     setCart([]);
                     setValidation(null);
@@ -532,7 +529,7 @@ export function PosManager() {
 
             <div className="mt-5 grid max-h-[45vh] gap-3 overflow-y-auto pr-1">
               {!cart.length ? (
-                <div className="rounded-2xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
                   Agrega productos o servicios desde los resultados.
                 </div>
               ) : (
@@ -552,11 +549,11 @@ export function PosManager() {
             {validation && <ValidationNotice validation={validation} />}
 
             {validation?.valid && (
-              <div className="mt-5 border-t border-slate-800 pt-5">
+              <div className="mt-5 border-t border-slate-200 pt-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Pagos</h3>
                   <button
-                    className="text-sm text-emerald-400 hover:text-emerald-300"
+                    className="text-sm text-blue-600 hover:text-blue-700"
                     onClick={addPayment}
                     type="button"
                   >
@@ -566,7 +563,7 @@ export function PosManager() {
                 <div className="mt-3 grid gap-3">
                   {payments.map((payment) => (
                     <div
-                      className="grid gap-2 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2"
+                      className="grid gap-2 rounded-2xl border border-slate-200 p-3 sm:grid-cols-2"
                       key={payment.id}
                     >
                       <label>
@@ -635,7 +632,7 @@ export function PosManager() {
                     </div>
                   ))}
                 </div>
-                <p className="mt-3 text-right text-sm text-slate-400">
+                <p className="mt-3 text-right text-sm text-slate-500">
                   Pagos: {currency(paymentTotal)}
                 </p>
                 <label className="mt-3">
@@ -681,18 +678,18 @@ function PosResultCard({
   onAdd: (item: PosItem) => void;
 }) {
   return (
-    <article className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900 p-4">
+    <article className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <span className="text-xs font-semibold text-emerald-400 uppercase">
+            <span className="text-xs font-semibold text-blue-600 uppercase">
               {item.type === PosItemType.PRODUCT ? 'Producto' : 'Servicio'}
             </span>
             <h3 className="mt-1 font-semibold">{item.name}</h3>
           </div>
           <span className="font-semibold">{currency(Number(item.price))}</span>
         </div>
-        <p className="mt-2 line-clamp-2 text-sm text-slate-400">
+        <p className="mt-2 line-clamp-2 text-sm text-slate-500">
           {item.description || item.category?.name || 'Sin descripción'}
         </p>
         <p className="mt-3 text-xs text-slate-500">
@@ -728,7 +725,7 @@ function CartLineEditor({
   ) => void;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-medium">{line.name}</p>
@@ -786,11 +783,11 @@ function Totals({
   };
 }) {
   return (
-    <dl className="mt-5 grid gap-2 border-t border-slate-800 pt-4 text-sm">
+    <dl className="mt-5 grid gap-2 border-t border-slate-200 pt-4 text-sm">
       <TotalRow label="Subtotal" value={totals.subtotal} />
       <TotalRow label="Descuento" value={-totals.discount} />
       <TotalRow label="ITBIS" value={totals.tax} />
-      <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-3 text-lg font-semibold">
+      <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3 text-lg font-semibold">
         <dt>Total</dt>
         <dd>{currency(totals.total)}</dd>
       </div>
@@ -800,7 +797,7 @@ function Totals({
 
 function TotalRow({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between text-slate-300">
+    <div className="flex items-center justify-between text-slate-600">
       <dt>{label}</dt>
       <dd>{currency(value)}</dd>
     </div>
@@ -816,8 +813,8 @@ function ValidationNotice({
     <div
       className={`mt-5 rounded-2xl border p-4 text-sm ${
         validation.valid
-          ? 'border-emerald-800 bg-emerald-950/30 text-emerald-200'
-          : 'border-rose-900 bg-rose-950/30 text-rose-200'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          : 'border-red-200 bg-red-50 text-red-700'
       }`}
       role="status"
     >

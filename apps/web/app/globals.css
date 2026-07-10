@@ -6,7 +6,7 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   * {
@@ -15,8 +15,8 @@
 
   body {
     margin: 0;
-    background: #020617;
-    color: #f8fafc;
+    background: #f8fafc;
+    color: #020617;
     font-family: Arial, Helvetica, sans-serif;
   }
 
@@ -24,30 +24,38 @@
   select,
   textarea {
     width: 100%;
-    border: 1px solid #334155;
+    border: 1px solid #cbd5e1;
     border-radius: 0.75rem;
-    background: #0f172a;
+    background: #ffffff;
     padding: 0.75rem 0.875rem;
-    color: white;
+    color: #020617;
     outline: none;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
   }
 
   input:focus,
   select:focus,
   textarea:focus {
-    border-color: #34d399;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgb(59 130 246 / 0.2);
   }
 
   input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
-    accent-color: #10b981;
+    accent-color: #2563eb;
   }
 
   label {
     display: grid;
     gap: 0.4rem;
-    color: #cbd5e1;
+    color: #334155;
     font-size: 0.875rem;
+  }
+
+  input.text-white,
+  select.text-white,
+  textarea.text-white {
+    color: #020617;
   }
 }

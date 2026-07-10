@@ -108,13 +108,10 @@ export function SalesManager() {
       <main className="grid min-h-screen place-items-center px-5 text-center">
         <div>
           <h1 className="text-2xl font-semibold">Acceso no disponible</h1>
-          <p className="mt-2 text-slate-400">
+          <p className="mt-2 text-slate-500">
             Tu rol no puede consultar ventas.
           </p>
-          <Link
-            className="mt-5 inline-block text-emerald-400"
-            href="/dashboard"
-          >
+          <Link className="mt-5 inline-block text-blue-600" href="/dashboard">
             Volver al panel
           </Link>
         </div>
@@ -125,29 +122,29 @@ export function SalesManager() {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Ventas · Comercia ERP
             </p>
             <h1 className="mt-1 text-3xl font-semibold">Ventas internas</h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Consulta ventas, pagos y balances sin documentación fiscal.
             </p>
           </div>
           <div className="flex gap-4 text-sm">
             {user.role.code !== 'ACCOUNTING' && (
-              <Link className="text-emerald-400" href="/pos">
+              <Link className="text-blue-600" href="/pos">
                 Nueva venta
               </Link>
             )}
-            <Link className="text-slate-300" href="/dashboard">
+            <Link className="text-slate-600" href="/dashboard">
               Volver al panel
             </Link>
           </div>
         </header>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
           <form
             className="grid gap-3 lg:grid-cols-[1fr_180px_160px_160px_auto]"
             onSubmit={(event: FormEvent) => {
@@ -190,7 +187,7 @@ export function SalesManager() {
 
           {error && (
             <div
-              className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+              className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
               role="alert"
             >
               {error}
@@ -208,7 +205,7 @@ export function SalesManager() {
           </div>
 
           {!loading && total > 0 && (
-            <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-sm text-slate-400">
+            <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-500">
               <span>
                 Página {page} de {Math.max(1, Math.ceil(total / limit))} ·{' '}
                 {total} ventas
@@ -242,7 +239,7 @@ export function SalesManager() {
 function SaleCard({ sale }: { sale: Sale }) {
   return (
     <Link
-      className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-slate-600 sm:grid-cols-[1fr_auto] sm:items-center"
+      className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 sm:grid-cols-[1fr_auto] sm:items-center"
       href={`/sales/${sale.id}`}
     >
       <div>
@@ -250,7 +247,7 @@ function SaleCard({ sale }: { sale: Sale }) {
           <h2 className="font-semibold">{sale.saleNumber}</h2>
           <Status status={sale.status} />
         </div>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-slate-500">
           {sale.customer?.name ?? 'Consumidor final'} ·{' '}
           {new Date(sale.createdAt).toLocaleString('es-DO')} ·{' '}
           {sale.createdBy.name}
@@ -258,7 +255,7 @@ function SaleCard({ sale }: { sale: Sale }) {
       </div>
       <div className="text-left sm:text-right">
         <p className="text-lg font-semibold">{currency(Number(sale.total))}</p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           Pagado {currency(Number(sale.paidTotal))} · Balance{' '}
           {currency(Number(sale.balanceDue))}
         </p>
@@ -270,9 +267,9 @@ function SaleCard({ sale }: { sale: Sale }) {
 export function Status({ status }: { status: SaleStatus }) {
   const styles =
     status === SaleStatus.COMPLETED
-      ? 'bg-emerald-950 text-emerald-300'
+      ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
       : status === SaleStatus.CANCELLED
-        ? 'bg-rose-950 text-rose-300'
+        ? 'border border-red-200 bg-red-50 text-red-700'
         : 'bg-amber-950 text-amber-300';
   const label = {
     [SaleStatus.COMPLETED]: 'Completada',

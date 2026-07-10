@@ -3,6 +3,7 @@ import {
   CompanySubscriptionStatus,
   PrismaClient,
   SubscriptionEventType,
+  SubscriptionInvoiceStatus,
 } from '@prisma/client';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
@@ -62,6 +63,17 @@ async function processOverdueSubscriptions(now = new Date()) {
         graceEndsAt: { lt: now },
       },
       orderBy: { graceEndsAt: 'asc' },
+    });
+    const overdueInvoices = await tx.subscriptionInvoice.findMany({
+      where: {
+        status: {
+          in: [
+            SubscriptionInvoiceStatus.PENDING,
+            SubscriptionInvoiceStatus.PARTIALLY_PAID,
+          ],
+        },
+        dueDate: { lt: now },
+      },
     });
 
     for (const subscription of activeOverdue) {
@@ -164,6 +176,39 @@ async function processOverdueSubscriptions(now = new Date()) {
       });
     }
 
+    if (overdueInvoices.length) {
+      await tx.subscriptionInvoice.updateMany({
+        where: { id: { in: overdueInvoices.map((invoice) => invoice.id) } },
+        data: { status: SubscriptionInvoiceStatus.OVERDUE },
+      });
+      await tx.subscriptionEvent.createMany({
+        data: overdueInvoices.map((invoice) => ({
+          companySubscriptionId: invoice.companySubscriptionId,
+          companyId: invoice.companyId,
+          type: SubscriptionEventType.INVOICE_OVERDUE,
+          message: `Factura interna ${invoice.invoiceNumber} marcada como vencida`,
+          metadata: {
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            processedAt: now.toISOString(),
+          },
+        })),
+      });
+      await tx.platformAuditLog.createMany({
+        data: overdueInvoices.map((invoice) => ({
+          action: 'SUBSCRIPTION_INVOICE_OVERDUE',
+          module: 'platform_billing',
+          entityType: 'SubscriptionInvoice',
+          entityId: invoice.id,
+          description: `Factura interna ${invoice.invoiceNumber} marcada como vencida`,
+          metadataJson: {
+            invoiceNumber: invoice.invoiceNumber,
+            processedAt: now.toISOString(),
+          },
+        })),
+      });
+    }
+
     const movedToGracePeriod = activeOverdue.length;
     const companiesSuspended = graceExpired.length;
     const noActionRequired = total - movedToGracePeriod - companiesSuspended;
@@ -176,12 +221,18 @@ async function processOverdueSubscriptions(now = new Date()) {
         metadataJson: {
           movedToGracePeriod,
           companiesSuspended,
+          invoicesOverdue: overdueInvoices.length,
           noActionRequired,
         },
       },
     });
 
-    return { movedToGracePeriod, companiesSuspended, noActionRequired };
+    return {
+      movedToGracePeriod,
+      companiesSuspended,
+      invoicesOverdue: overdueInvoices.length,
+      noActionRequired,
+    };
   });
 }
 
@@ -194,6 +245,7 @@ async function main() {
     `Subscriptions moved to grace period: ${result.movedToGracePeriod}`,
   );
   console.log(`Companies suspended: ${result.companiesSuspended}`);
+  console.log(`Invoices marked overdue: ${result.invoicesOverdue}`);
   console.log(`No action required: ${result.noActionRequired}`);
   console.log('Billing overdue process completed');
 }

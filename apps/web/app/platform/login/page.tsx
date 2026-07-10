@@ -36,7 +36,7 @@ export default function PlatformLoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12">
+    <main className="grid min-h-screen place-items-center bg-slate-50 px-6 py-12">
       <form
         className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-950/25"
         onSubmit={(event) => void submit(event)}

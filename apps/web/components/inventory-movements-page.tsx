@@ -61,7 +61,7 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
       <main className="grid min-h-screen place-items-center px-5 text-center">
         <div>
           <p className="text-lg font-medium">Necesitas iniciar sesión.</p>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-slate-500">
             Redirigiendo al acceso del sistema…
           </p>
         </div>
@@ -98,25 +98,28 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Inventario · Comercia ERP
             </p>
             <h1 className="mt-1 text-3xl font-semibold">
               Movimientos de {response.product.name}
             </h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Stock actual {Number(response.product.stock)} · mínimo{' '}
               {Number(response.product.minStock)}
             </p>
           </div>
           <div className="flex gap-4 text-sm">
-            <Link className="text-slate-300 hover:text-white" href="/inventory">
+            <Link
+              className="text-slate-600 hover:text-slate-950"
+              href="/inventory"
+            >
               Volver a inventario
             </Link>
             <Link
-              className="text-emerald-400 hover:text-emerald-300"
+              className="text-blue-600 hover:text-blue-700"
               href="/inventory/low-stock"
             >
               Ver bajo stock
@@ -125,12 +128,12 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
         </header>
 
         {error && (
-          <div className="mt-6 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200">
+          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
             <p>{error}</p>
           </div>
         )}
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
           {!response.items.length && (
             <p className="py-8 text-center text-slate-500">
               Aún no hay movimientos para este producto.
@@ -139,13 +142,13 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
           <div className="grid gap-3">
             {response.items.map((movement) => (
               <article
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                 key={movement.id}
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h2 className="font-semibold">{movement.type}</h2>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-slate-500">
                       Cantidad {Number(movement.quantity)} · stock anterior{' '}
                       {Number(movement.previousStock)} · stock nuevo{' '}
                       {Number(movement.newStock)}
@@ -154,7 +157,7 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
                       {movement.reason}
                     </p>
                   </div>
-                  <div className="text-right text-sm text-slate-400">
+                  <div className="text-right text-sm text-slate-500">
                     <p>{new Date(movement.createdAt).toLocaleString()}</p>
                     <p className="mt-1">
                       {movement.createdBy?.name ?? 'Usuario no disponible'}

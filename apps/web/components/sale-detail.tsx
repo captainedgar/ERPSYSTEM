@@ -134,7 +134,7 @@ export function SaleDetail({ saleId }: { saleId: string }) {
       <main className="grid min-h-screen place-items-center px-5 text-center">
         <div>
           <p className="text-rose-300">{error || 'Venta no encontrada'}</p>
-          <Link className="mt-4 inline-block text-emerald-400" href="/sales">
+          <Link className="mt-4 inline-block text-blue-600" href="/sales">
             Volver a ventas
           </Link>
         </div>
@@ -145,28 +145,28 @@ export function SaleDetail({ saleId }: { saleId: string }) {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Detalle de venta
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-semibold">{sale.saleNumber}</h1>
               <Status status={sale.status} />
             </div>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               {new Date(sale.createdAt).toLocaleString('es-DO')} ·{' '}
               {sale.branch?.name} · {sale.createdBy.name}
             </p>
           </div>
-          <Link className="text-sm text-slate-300" href="/sales">
+          <Link className="text-sm text-slate-600" href="/sales">
             Volver a ventas
           </Link>
         </header>
 
         {error && (
           <div
-            className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+            className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
             role="alert"
           >
             {error}
@@ -174,17 +174,17 @@ export function SaleDetail({ saleId }: { saleId: string }) {
         )}
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_340px]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Artículos</h2>
             <div className="mt-4 grid gap-3">
               {sale.items?.map((item) => (
                 <article
-                  className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:grid-cols-[1fr_auto]"
+                  className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[1fr_auto]"
                   key={item.id}
                 >
                   <div>
                     <p className="font-medium">{item.name}</p>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-slate-500">
                       {Number(item.quantity)} ×{' '}
                       {currency(Number(item.unitPrice))} · ITBIS{' '}
                       {Number(item.taxRate)}%
@@ -195,7 +195,7 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                       {currency(Number(item.total))}
                     </p>
                     {Number(item.discountAmount) > 0 && (
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-500">
                         Descuento {currency(Number(item.discountAmount))}
                       </p>
                     )}
@@ -208,14 +208,14 @@ export function SaleDetail({ saleId }: { saleId: string }) {
             <div className="mt-4 grid gap-3">
               {sale.payments?.map((payment) => (
                 <article
-                  className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 p-4"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4"
                   key={payment.id}
                 >
                   <div>
                     <p className="font-medium">
                       {paymentMethodLabel(payment.method)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-slate-500">
                       {payment.reference || 'Sin referencia'}
                     </p>
                   </div>
@@ -227,37 +227,37 @@ export function SaleDetail({ saleId }: { saleId: string }) {
             </div>
           </section>
 
-          <aside className="h-fit rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Resumen</h2>
-            <p className="mt-4 text-sm text-slate-400">Cliente</p>
+            <p className="mt-4 text-sm text-slate-500">Cliente</p>
             <p>{sale.customer?.name ?? 'Consumidor final'}</p>
             {sale.customer?.documentNumber && (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500">
                 {sale.customer.documentNumber}
               </p>
             )}
             {sale.cashSessionId && (
               <Link
-                className="mt-3 inline-block text-sm text-emerald-400"
+                className="mt-3 inline-block text-sm text-blue-600"
                 href={`/cash/sessions/${sale.cashSessionId}`}
               >
                 Ver caja asociada
               </Link>
             )}
-            <div className="mt-5 border-t border-slate-800 pt-4">
+            <div className="mt-5 border-t border-slate-200 pt-4">
               <h3 className="font-semibold">Documentos internos</h3>
               <div className="mt-3 grid gap-2">
                 {documents.length ? (
                   documents.map((document) => (
                     <Link
-                      className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm transition hover:border-slate-600"
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm transition hover:border-blue-300"
                       href={`/internal-documents/${document.id}`}
                       key={document.id}
                     >
                       <span className="font-medium">
                         {document.documentNumber}
                       </span>
-                      <span className="block text-xs text-slate-400">
+                      <span className="block text-xs text-slate-500">
                         {documentTypeLabel(document.documentType)} ·{' '}
                         {document.status === InternalDocumentStatus.ISSUED
                           ? 'Emitido'
@@ -298,7 +298,7 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                       : 'Generar factura interna'}
                   </Button>
                   <Link
-                    className="text-center text-sm text-emerald-400"
+                    className="text-center text-sm text-blue-600"
                     href={`/internal-documents?saleId=${sale.id}`}
                   >
                     Ver documentos internos
@@ -306,20 +306,20 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                 </div>
               )}
             </div>
-            <dl className="mt-5 grid gap-2 border-t border-slate-800 pt-4 text-sm">
+            <dl className="mt-5 grid gap-2 border-t border-slate-200 pt-4 text-sm">
               <Row label="Subtotal" value={Number(sale.subtotal)} />
               <Row label="Descuento" value={-Number(sale.discountTotal)} />
               <Row label="ITBIS" value={Number(sale.taxTotal)} />
               <Row label="Pagado" value={Number(sale.paidTotal)} />
               <Row label="Balance" value={Number(sale.balanceDue)} />
-              <div className="mt-2 flex justify-between border-t border-slate-800 pt-3 text-lg font-semibold">
+              <div className="mt-2 flex justify-between border-t border-slate-200 pt-3 text-lg font-semibold">
                 <dt>Total</dt>
                 <dd>{currency(Number(sale.total))}</dd>
               </div>
             </dl>
 
             {sale.status === SaleStatus.CANCELLED && (
-              <div className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200">
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
                 <p className="font-semibold">Venta anulada</p>
                 <p className="mt-1">{sale.cancelReason}</p>
                 {sale.cancelledAt && (
@@ -333,13 +333,13 @@ export function SaleDetail({ saleId }: { saleId: string }) {
 
             {canCancel && sale.status === SaleStatus.COMPLETED && (
               <form
-                className="mt-6 border-t border-slate-800 pt-5"
+                className="mt-6 border-t border-slate-200 pt-5"
                 onSubmit={(event) => void submitCancel(event)}
               >
                 <label>
                   Motivo de anulación
                   <textarea
-                    className="min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white"
+                    className="min-h-24 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-slate-950"
                     maxLength={500}
                     minLength={3}
                     required
@@ -370,7 +370,7 @@ function documentTypeLabel(type: string) {
 
 function Row({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex justify-between text-slate-300">
+    <div className="flex justify-between text-slate-600">
       <dt>{label}</dt>
       <dd>{currency(value)}</dd>
     </div>

@@ -113,19 +113,19 @@ export function CashSessionsManager() {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Caja · Historial
             </p>
             <h1 className="mt-1 text-3xl font-semibold">Sesiones de caja</h1>
           </div>
-          <Link className="text-slate-300" href="/cash">
+          <Link className="text-slate-600" href="/cash">
             Volver a caja
           </Link>
         </header>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
           <form
             className="grid gap-3 sm:grid-cols-[180px_180px_180px_auto]"
             onSubmit={(event: FormEvent) => {
@@ -160,7 +160,7 @@ export function CashSessionsManager() {
           </form>
 
           {error && (
-            <div className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-rose-200">
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
               {error}
             </div>
           )}
@@ -173,7 +173,7 @@ export function CashSessionsManager() {
             ) : (
               items.map((session) => (
                 <Link
-                  className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-slate-600 md:grid-cols-[1fr_auto] md:items-center"
+                  className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 md:grid-cols-[1fr_auto] md:items-center"
                   href={`/cash/sessions/${session.id}`}
                   key={session.id}
                 >
@@ -182,7 +182,7 @@ export function CashSessionsManager() {
                       <h2 className="font-semibold">{session.branch.name}</h2>
                       <Status status={session.status} />
                     </div>
-                    <p className="mt-2 text-sm text-slate-400">
+                    <p className="mt-2 text-sm text-slate-500">
                       {session.openedBy.name} ·{' '}
                       {new Date(session.openedAt).toLocaleString('es-DO')}
                       {session.closedAt
@@ -195,7 +195,7 @@ export function CashSessionsManager() {
                       Esperado {currency(Number(session.expectedCashAmount))}
                     </p>
                     {session.differenceAmount !== null && (
-                      <p className="text-sm text-slate-400">
+                      <p className="text-sm text-slate-500">
                         Diferencia {currency(Number(session.differenceAmount))}
                       </p>
                     )}
@@ -206,7 +206,7 @@ export function CashSessionsManager() {
           </div>
 
           {!loading && total > 0 && (
-            <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-sm text-slate-400">
+            <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-500">
               <span>
                 Página {page} de {Math.max(1, Math.ceil(total / limit))}
               </span>
@@ -241,8 +241,8 @@ export function Status({ status }: { status: CashSessionStatus }) {
     <span
       className={`rounded-full px-3 py-1 text-xs font-semibold ${
         status === CashSessionStatus.OPEN
-          ? 'bg-emerald-950 text-emerald-300'
-          : 'bg-slate-800 text-slate-300'
+          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+          : 'border border-slate-200 bg-slate-100 text-slate-700'
       }`}
     >
       {status === CashSessionStatus.OPEN ? 'ABIERTA' : 'CERRADA'}

@@ -112,7 +112,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
             {error || 'Documento interno no encontrado'}
           </p>
           <Link
-            className="mt-4 inline-block text-emerald-400"
+            className="mt-4 inline-block text-blue-600"
             href="/internal-documents"
           >
             Volver a documentos
@@ -125,9 +125,9 @@ export function InternalDocumentDetail({ id }: { id: string }) {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Documento interno no fiscal
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-3">
@@ -137,26 +137,23 @@ export function InternalDocumentDetail({ id }: { id: string }) {
               <Status status={document.status} />
               <TypeLabel type={document.documentType} />
             </div>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Venta {document.sale.saleNumber} ·{' '}
               {new Date(document.createdAt).toLocaleString('es-DO')} ·{' '}
               {document.createdBy.name}
             </p>
           </div>
           <div className="flex gap-4 text-sm">
-            <Link
-              className="text-emerald-400"
-              href={`/sales/${document.saleId}`}
-            >
+            <Link className="text-blue-600" href={`/sales/${document.saleId}`}>
               Ver venta
             </Link>
             <Link
-              className="text-emerald-400"
+              className="text-blue-600"
               href={`/internal-documents/${document.id}/print`}
             >
               Imprimir
             </Link>
-            <Link className="text-slate-300" href="/internal-documents">
+            <Link className="text-slate-600" href="/internal-documents">
               Volver
             </Link>
           </div>
@@ -164,7 +161,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
 
         {error && (
           <div
-            className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+            className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
             role="alert"
           >
             {error}
@@ -172,17 +169,17 @@ export function InternalDocumentDetail({ id }: { id: string }) {
         )}
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_340px]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Items</h2>
             <div className="mt-4 grid gap-3">
               {document.items?.map((item) => (
                 <article
-                  className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:grid-cols-[1fr_auto]"
+                  className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[1fr_auto]"
                   key={item.id}
                 >
                   <div>
                     <p className="font-medium">{item.name}</p>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-slate-500">
                       {Number(item.quantity)} x{' '}
                       {currency(Number(item.unitPrice))} · ITBIS{' '}
                       {Number(item.taxRate)}%
@@ -193,7 +190,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
                       {currency(Number(item.total))}
                     </p>
                     {Number(item.discountAmount) > 0 && (
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-500">
                         Descuento {currency(Number(item.discountAmount))}
                       </p>
                     )}
@@ -203,22 +200,22 @@ export function InternalDocumentDetail({ id }: { id: string }) {
             </div>
           </section>
 
-          <aside className="h-fit rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Resumen</h2>
-            <p className="mt-4 text-sm text-slate-400">Cliente</p>
+            <p className="mt-4 text-sm text-slate-500">Cliente</p>
             <p>{document.customer?.name ?? 'Consumidor final'}</p>
             {document.customer?.documentNumber && (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500">
                 {document.customer.documentNumber}
               </p>
             )}
-            <dl className="mt-5 grid gap-2 border-t border-slate-800 pt-4 text-sm">
+            <dl className="mt-5 grid gap-2 border-t border-slate-200 pt-4 text-sm">
               <Row label="Subtotal" value={Number(document.subtotal)} />
               <Row label="Descuento" value={-Number(document.discountTotal)} />
               <Row label="ITBIS" value={Number(document.taxTotal)} />
               <Row label="Pagado" value={Number(document.paidTotal)} />
               <Row label="Balance" value={Number(document.balanceDue)} />
-              <div className="mt-2 flex justify-between border-t border-slate-800 pt-3 text-lg font-semibold">
+              <div className="mt-2 flex justify-between border-t border-slate-200 pt-3 text-lg font-semibold">
                 <dt>Total</dt>
                 <dd>{currency(Number(document.total))}</dd>
               </div>
@@ -229,7 +226,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
             </div>
 
             {document.status === InternalDocumentStatus.VOIDED && (
-              <div className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200">
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
                 <p className="font-semibold">Documento anulado</p>
                 <p className="mt-1">{document.voidReason}</p>
                 {document.voidedAt && (
@@ -243,13 +240,13 @@ export function InternalDocumentDetail({ id }: { id: string }) {
 
             {canVoid && document.status === InternalDocumentStatus.ISSUED && (
               <form
-                className="mt-6 border-t border-slate-800 pt-5"
+                className="mt-6 border-t border-slate-200 pt-5"
                 onSubmit={(event) => void submitVoid(event)}
               >
                 <label>
                   Motivo de anulacion
                   <textarea
-                    className="min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white"
+                    className="min-h-24 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-slate-950"
                     maxLength={500}
                     minLength={3}
                     required
@@ -276,7 +273,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
 
 function Row({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex justify-between text-slate-300">
+    <div className="flex justify-between text-slate-600">
       <dt>{label}</dt>
       <dd>{currency(value)}</dd>
     </div>

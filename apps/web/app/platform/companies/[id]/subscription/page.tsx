@@ -7,6 +7,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
   PlatformHeader,
+  PlatformInvoiceStatusBadge,
   PlatformSubscriptionStatusBadge,
   platformErrorClass,
   platformErrorMessage,
@@ -19,15 +20,18 @@ import {
 import {
   getCompanySubscription,
   getPlatformCompany,
+  listCompanySubscriptionInvoices,
   listSaasPlans,
   listSubscriptionEvents,
   listSubscriptionPayments,
+  createSubscriptionInvoice,
   registerSubscriptionPayment,
   upsertCompanySubscription,
   type CompanySubscription,
   type CompanySubscriptionStatus,
   type PlatformCompany,
   type SaasPlan,
+  type SubscriptionInvoice,
   type SubscriptionEvent,
   type SubscriptionPayment,
   type SubscriptionPaymentMethod,
@@ -59,6 +63,7 @@ export default function PlatformCompanySubscriptionPage() {
   );
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
   const [events, setEvents] = useState<SubscriptionEvent[]>([]);
+  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -89,18 +94,21 @@ export default function PlatformCompanySubscriptionPage() {
         nextSubscription,
         nextPayments,
         nextEvents,
+        nextInvoices,
       ] = await Promise.all([
         getPlatformCompany(params.id),
         listSaasPlans(),
         getCompanySubscription(params.id),
         listSubscriptionPayments(params.id),
         listSubscriptionEvents(params.id),
+        listCompanySubscriptionInvoices(params.id),
       ]);
       setCompany(nextCompany);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
       setPayments(nextPayments);
       setEvents(nextEvents);
+      setInvoices(nextInvoices);
       setSubscriptionForm({
         planId: nextSubscription?.planId ?? nextPlans[0]?.id ?? '',
         status: nextSubscription?.status ?? 'ACTIVE',
@@ -134,12 +142,14 @@ export default function PlatformCompanySubscriptionPage() {
           nextSubscription,
           nextPayments,
           nextEvents,
+          nextInvoices,
         ] = await Promise.all([
           getPlatformCompany(params.id),
           listSaasPlans(),
           getCompanySubscription(params.id),
           listSubscriptionPayments(params.id),
           listSubscriptionEvents(params.id),
+          listCompanySubscriptionInvoices(params.id),
         ]);
         if (cancelled) return;
         setCompany(nextCompany);
@@ -147,6 +157,7 @@ export default function PlatformCompanySubscriptionPage() {
         setSubscription(nextSubscription);
         setPayments(nextPayments);
         setEvents(nextEvents);
+        setInvoices(nextInvoices);
         setSubscriptionForm({
           planId: nextSubscription?.planId ?? nextPlans[0]?.id ?? '',
           status: nextSubscription?.status ?? 'ACTIVE',
@@ -227,6 +238,29 @@ export default function PlatformCompanySubscriptionPage() {
       setMessage('Pago registrado correctamente.');
     } catch (reason) {
       setError(platformErrorMessage('No se pudo registrar el pago.', reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function createCurrentInvoice() {
+    if (!subscription) return;
+    setSubmitting(true);
+    setError('');
+    setMessage('');
+    try {
+      await createSubscriptionInvoice({
+        companyId: params.id,
+        companySubscriptionId: subscription.id,
+        planId: subscription.planId,
+        billingPeriodStart: toInputDate(subscription.currentPeriodStart),
+        billingPeriodEnd: toInputDate(subscription.currentPeriodEnd),
+        dueDate: toInputDate(subscription.nextPaymentDueAt),
+      });
+      await refresh();
+      setMessage('Factura del periodo actual generada correctamente.');
+    } catch (reason) {
+      setError(platformErrorMessage('No se pudo generar la factura.', reason));
     } finally {
       setSubmitting(false);
     }
@@ -487,6 +521,52 @@ export default function PlatformCompanySubscriptionPage() {
             </form>
           </div>
           <div className="grid gap-6">
+            <HistoryPanel title="Facturas de suscripcion">
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  disabled={submitting || !subscription}
+                  onClick={() => void createCurrentInvoice()}
+                  type="button"
+                >
+                  Generar factura
+                </Button>
+                <Link
+                  className={platformLinkClass}
+                  href="/platform/billing/invoices"
+                >
+                  Ver todas
+                </Link>
+              </div>
+              {invoices.length ? (
+                invoices.slice(0, 5).map((invoice) => (
+                  <Link
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 hover:bg-blue-50"
+                    href={`/platform/billing/invoices/${invoice.id}`}
+                    key={invoice.id}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-medium text-slate-950">
+                          {invoice.invoiceNumber}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatDate(invoice.billingPeriodStart)} -{' '}
+                          {formatDate(invoice.billingPeriodEnd)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <PlatformInvoiceStatusBadge status={invoice.status} />
+                        <p className="mt-2 font-semibold text-slate-950">
+                          {platformMoney(invoice.balance)}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <Empty text="Sin facturas de suscripcion." />
+              )}
+            </HistoryPanel>
             <HistoryPanel title="Pagos">
               {payments.length ? (
                 payments.map((payment) => (

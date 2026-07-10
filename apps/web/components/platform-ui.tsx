@@ -6,6 +6,7 @@ import type {
   CompanySubscriptionStatus,
   PlatformAuditLog,
   PlatformCompany,
+  SubscriptionInvoiceStatus,
 } from '@/lib/platform';
 
 export const platformInputClass =
@@ -116,6 +117,23 @@ export function PlatformSubscriptionStatusBadge({
     PAYMENT_DUE: 'border-orange-200 bg-orange-50 text-orange-700',
     SUSPENDED: 'border-red-200 bg-red-50 text-red-700',
     TRIAL: 'border-blue-200 bg-blue-50 text-blue-700',
+  }[status];
+  return <Badge className={classes}>{status}</Badge>;
+}
+
+export function PlatformInvoiceStatusBadge({
+  status,
+}: {
+  status: SubscriptionInvoiceStatus;
+}) {
+  const classes = {
+    CANCELLED: 'border-slate-200 bg-slate-100 text-slate-700',
+    DRAFT: 'border-slate-200 bg-slate-100 text-slate-700',
+    OVERDUE: 'border-red-200 bg-red-50 text-red-700',
+    PAID: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    PARTIALLY_PAID: 'border-blue-200 bg-blue-50 text-blue-700',
+    PENDING: 'border-amber-200 bg-amber-50 text-amber-700',
+    VOIDED: 'border-slate-200 bg-slate-100 text-slate-700',
   }[status];
   return <Badge className={classes}>{status}</Badge>;
 }

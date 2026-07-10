@@ -158,10 +158,7 @@ export function BusinessSettingsForm({
           <p className="text-rose-400">
             {error || 'No se encontró la configuración del negocio.'}
           </p>
-          <Link
-            className="mt-4 inline-block text-emerald-400"
-            href="/dashboard"
-          >
+          <Link className="mt-4 inline-block text-blue-600" href="/dashboard">
             Volver al panel
           </Link>
         </div>
@@ -179,29 +176,27 @@ export function BusinessSettingsForm({
         className="mx-auto max-w-5xl"
         onSubmit={(event) => void save(event)}
       >
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
-              Comercia ERP
-            </p>
+            <p className="text-sm font-semibold text-blue-600">Comercia ERP</p>
             <h1 className="mt-1 text-3xl font-semibold">
               {onboarding
                 ? 'Configuración inicial'
                 : 'Configuración del negocio'}
             </h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Define preferencias que usarán los módulos operativos futuros.
             </p>
           </div>
           <Link
-            className="text-sm text-slate-300 hover:text-white"
+            className="text-sm text-slate-600 hover:text-slate-950"
             href="/dashboard"
           >
             Volver al panel
           </Link>
         </header>
 
-        <section className="mt-8 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+        <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
           <h2 className="text-xl font-semibold">Negocio y plantilla</h2>
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
             <label>
@@ -219,7 +214,7 @@ export function BusinessSettingsForm({
                 ))}
               </select>
             </label>
-            <div className="rounded-2xl bg-slate-900 p-4 text-sm text-slate-300">
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
               <p>{selectedTemplate?.description}</p>
               <p className="mt-2 text-xs text-slate-500">
                 Preparado para:{' '}
@@ -238,7 +233,7 @@ export function BusinessSettingsForm({
           </Button>
         </section>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
           <h2 className="text-xl font-semibold">Impuestos y documentos</h2>
           <div className="mt-5 grid gap-5 sm:grid-cols-3">
             <label>
@@ -284,7 +279,7 @@ export function BusinessSettingsForm({
           </div>
         </section>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
           <h2 className="text-xl font-semibold">Métodos de pago</h2>
           <div className="mt-5 grid gap-3 sm:grid-cols-4">
             {Object.values(PaymentMethod).map((method) => (
@@ -364,7 +359,7 @@ export function BusinessSettingsForm({
           />
         </section>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
           <h2 className="text-xl font-semibold">Recibo e impresión</h2>
           <div className="mt-5 grid gap-5">
             <Checkbox
@@ -375,7 +370,7 @@ export function BusinessSettingsForm({
             <label>
               Pie del recibo
               <textarea
-                className="min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white outline-none focus:border-emerald-400"
+                className="min-h-28 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 maxLength={500}
                 value={settings.receiptFooterText ?? ''}
                 onChange={(event) =>
@@ -387,7 +382,7 @@ export function BusinessSettingsForm({
         </section>
 
         {error && <p className="mt-5 text-sm text-rose-400">{error}</p>}
-        {message && <p className="mt-5 text-sm text-emerald-400">{message}</p>}
+        {message && <p className="mt-5 text-sm text-blue-600">{message}</p>}
 
         <footer className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Button disabled={submitting} type="submit">
@@ -419,7 +414,7 @@ function Checkbox({
   onChange: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer grid-cols-none items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <label className="flex cursor-pointer grid-cols-none items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <input checked={checked} onChange={onChange} type="checkbox" />
       <span>{label}</span>
     </label>
@@ -434,7 +429,7 @@ function PreferenceGroup({
   values: Array<[string, boolean, (value: boolean) => void]>;
 }) {
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6 sm:p-8">
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
       <h2 className="text-xl font-semibold">{title}</h2>
       <div className="mt-5 grid gap-3">
         {values.map(([label, checked, onChange]) => (

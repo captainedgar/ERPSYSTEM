@@ -237,6 +237,21 @@ enum SubscriptionEventType {
   COMPANY_AUTO_SUSPENDED_FOR_NON_PAYMENT
   COMPANY_REACTIVATED_AFTER_PAYMENT
   BILLING_OVERDUE_PROCESS_RUN
+  INVOICE_CREATED
+  INVOICE_PAID
+  INVOICE_PARTIALLY_PAID
+  INVOICE_OVERDUE
+  INVOICE_VOIDED
+}
+
+enum SubscriptionInvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  VOIDED
+  CANCELLED
 }
 
 model Company {
@@ -281,6 +296,7 @@ model Company {
   subscription          CompanySubscription?
   subscriptionPayments  SubscriptionPayment[]
   subscriptionEvents    SubscriptionEvent[]
+  subscriptionInvoices  SubscriptionInvoice[]
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
   deletedAt             DateTime?
@@ -1009,6 +1025,7 @@ model PlatformUser {
   auditLogs            PlatformAuditLog[]
   subscriptionPayments SubscriptionPayment[]
   subscriptionEvents   SubscriptionEvent[]
+  subscriptionInvoices SubscriptionInvoice[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 
@@ -1064,6 +1081,7 @@ model SaasPlan {
   modules         Json
   isActive        Boolean               @default(true)
   subscriptions   CompanySubscription[]
+  invoices        SubscriptionInvoice[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1089,6 +1107,7 @@ model CompanySubscription {
   plan                  SaasPlan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
   payments              SubscriptionPayment[]
   events                SubscriptionEvent[]
+  invoices              SubscriptionInvoice[]
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
 
@@ -1101,6 +1120,7 @@ model SubscriptionPayment {
   id                      String                    @id @default(cuid())
   companySubscriptionId   String
   companyId               String
+  subscriptionInvoiceId   String?
   amount                  Decimal                   @db.Decimal(12, 2)
   currency                Currency                  @default(DOP)
   method                  SubscriptionPaymentMethod
@@ -1110,13 +1130,63 @@ model SubscriptionPayment {
   createdByPlatformUserId String
   subscription            CompanySubscription       @relation(fields: [companySubscriptionId], references: [id], onDelete: Cascade)
   company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  invoice                 SubscriptionInvoice?      @relation(fields: [subscriptionInvoiceId], references: [id], onDelete: SetNull)
   createdByPlatformUser   PlatformUser              @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
   createdAt               DateTime                  @default(now())
 
   @@index([companyId, paidAt(sort: Desc)])
   @@index([companySubscriptionId, paidAt(sort: Desc)])
+  @@index([subscriptionInvoiceId, paidAt(sort: Desc)])
   @@index([createdByPlatformUserId, createdAt])
   @@map("subscription_payments")
+}
+
+model SubscriptionInvoice {
+  id                      String                    @id @default(cuid())
+  companyId               String
+  companySubscriptionId   String
+  planId                  String
+  invoiceNumber           String                    @unique
+  status                  SubscriptionInvoiceStatus @default(PENDING)
+  currency                Currency                  @default(DOP)
+  subtotal                Decimal                   @db.Decimal(12, 2)
+  taxAmount               Decimal                   @default(0) @db.Decimal(12, 2)
+  discountAmount          Decimal                   @default(0) @db.Decimal(12, 2)
+  total                   Decimal                   @db.Decimal(12, 2)
+  amountPaid              Decimal                   @default(0) @db.Decimal(12, 2)
+  balance                 Decimal                   @db.Decimal(12, 2)
+  billingPeriodStart      DateTime
+  billingPeriodEnd        DateTime
+  issueDate               DateTime                  @default(now())
+  dueDate                 DateTime
+  paidAt                  DateTime?
+  voidedAt                DateTime?
+  voidReason              String?
+  notes                   String?
+  createdByPlatformUserId String
+  company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  subscription            CompanySubscription       @relation(fields: [companySubscriptionId], references: [id], onDelete: Restrict)
+  plan                    SaasPlan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments                SubscriptionPayment[]
+  createdByPlatformUser   PlatformUser              @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  @@index([companyId, status, dueDate])
+  @@index([companySubscriptionId, issueDate(sort: Desc)])
+  @@index([planId, status])
+  @@index([status, dueDate])
+  @@map("subscription_invoices")
+}
+
+model SubscriptionInvoiceSequence {
+  id         String   @id @default(cuid())
+  prefix     String   @unique
+  nextNumber Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("subscription_invoice_sequences")
 }
 
 model SubscriptionEvent {

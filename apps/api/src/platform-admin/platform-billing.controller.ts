@@ -17,10 +17,12 @@ import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformBillingService } from './platform-billing.service';
 import {
   CreateSaasPlanDto,
+  CreateSubscriptionInvoiceDto,
   RegisterSubscriptionPaymentDto,
   UpdateSaasPlanDto,
   UpdateSaasPlanStatusDto,
   UpsertCompanySubscriptionDto,
+  VoidSubscriptionInvoiceDto,
 } from './platform-billing.dto';
 import type {
   PlatformAuthUser,
@@ -130,6 +132,49 @@ export class PlatformBillingController {
   @Get('billing/subscriptions')
   listSubscriptions() {
     return this.billing.listSubscriptions();
+  }
+
+  @Get('billing/invoices')
+  listInvoices() {
+    return this.billing.listInvoices();
+  }
+
+  @Post('billing/invoices')
+  createInvoice(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Body() dto: CreateSubscriptionInvoiceDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.createInvoice(user, dto, requestContext(request));
+  }
+
+  @Get('billing/invoices/:id')
+  getInvoice(@Param('id') id: string) {
+    return this.billing.getInvoice(id);
+  }
+
+  @Post('billing/invoices/:id/void')
+  voidInvoice(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: VoidSubscriptionInvoiceDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.voidInvoice(user, id, dto, requestContext(request));
+  }
+
+  @Post('billing/invoices/:id/mark-overdue')
+  markInvoiceOverdue(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Req() request: Request,
+  ) {
+    return this.billing.markInvoiceOverdue(user, id, requestContext(request));
+  }
+
+  @Get('companies/:companyId/subscription/invoices')
+  listCompanyInvoices(@Param('companyId') companyId: string) {
+    return this.billing.listCompanyInvoices(companyId);
   }
 
   @Post('billing/process-overdue')

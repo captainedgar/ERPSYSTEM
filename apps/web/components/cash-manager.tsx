@@ -156,10 +156,7 @@ export function CashManager() {
       <main className="grid min-h-screen place-items-center text-center">
         <div>
           <p>No tienes permiso para consultar caja.</p>
-          <Link
-            className="mt-4 inline-block text-emerald-400"
-            href="/dashboard"
-          >
+          <Link className="mt-4 inline-block text-blue-600" href="/dashboard">
             Volver al panel
           </Link>
         </div>
@@ -170,24 +167,24 @@ export function CashManager() {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Caja · Comercia ERP
             </p>
             <h1 className="mt-1 text-3xl font-semibold">Caja actual</h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Control diario de efectivo para{' '}
               {user.branch?.name ?? 'tu sucursal'}.
             </p>
           </div>
           <div className="flex gap-4 text-sm">
             {canViewHistory && (
-              <Link className="text-emerald-400" href="/cash/sessions">
+              <Link className="text-blue-600" href="/cash/sessions">
                 Historial
               </Link>
             )}
-            <Link className="text-slate-300" href="/dashboard">
+            <Link className="text-slate-600" href="/dashboard">
               Volver al panel
             </Link>
           </div>
@@ -195,7 +192,7 @@ export function CashManager() {
 
         {error && (
           <div
-            className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+            className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
             role="alert"
           >
             {error}
@@ -203,7 +200,7 @@ export function CashManager() {
         )}
 
         {lastClosed && (
-          <div className="mt-5 rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4 text-emerald-200">
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 font-medium text-emerald-700">
             Caja cerrada. Diferencia:{' '}
             {currency(Number(lastClosed.differenceAmount))}.{' '}
             <Link
@@ -216,11 +213,11 @@ export function CashManager() {
         )}
 
         {!session ? (
-          <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">
               No tienes una caja abierta
             </h2>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Abre una caja para registrar ventas en efectivo y movimientos.
             </p>
             {canOperate && user.branch && (
@@ -258,7 +255,7 @@ export function CashManager() {
             <CashSummary session={session} />
             {canOperate && (
               <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+                <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h2 className="text-xl font-semibold">Movimiento manual</h2>
                   <form
                     className="mt-4 grid gap-4"
@@ -310,7 +307,7 @@ export function CashManager() {
                   </form>
                 </section>
 
-                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+                <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h2 className="text-xl font-semibold">Cerrar caja</h2>
                   <form
                     className="mt-4 grid gap-4"
@@ -359,16 +356,16 @@ export function CashManager() {
 
 function CashSummary({ session }: { session: CashSession }) {
   return (
-    <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+    <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Caja abierta</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500">
             Desde {new Date(session.openedAt).toLocaleString('es-DO')} ·{' '}
             {session.openedBy.name}
           </p>
         </div>
-        <span className="rounded-full bg-emerald-950 px-3 py-1 text-xs font-semibold text-emerald-300">
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
           ABIERTA
         </span>
       </div>
@@ -398,9 +395,9 @@ function SummaryValue({
 }) {
   return (
     <div
-      className={`rounded-2xl p-4 ${emphasized ? 'bg-emerald-950/50' : 'bg-slate-900'}`}
+      className={`rounded-2xl p-4 ${emphasized ? 'bg-emerald-50' : 'bg-slate-50'}`}
     >
-      <dt className="text-xs text-slate-400">{label}</dt>
+      <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-2 font-semibold">{currency(Number(value))}</dd>
     </div>
   );

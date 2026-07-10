@@ -86,7 +86,7 @@ export function InternalDocumentPrint({ id }: { id: string }) {
             {error || 'Documento interno no encontrado'}
           </p>
           <Link
-            className="mt-4 inline-block text-emerald-400"
+            className="mt-4 inline-block text-blue-600"
             href="/internal-documents"
           >
             Volver a documentos

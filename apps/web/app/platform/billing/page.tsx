@@ -18,10 +18,12 @@ import {
   listBillingPayments,
   listBillingSubscriptions,
   listPlatformCompanies,
+  listSubscriptionInvoices,
   processOverdueBilling,
   type BillingOverdueProcessResult,
   type CompanySubscription,
   type PlatformCompany,
+  type SubscriptionInvoice,
   type SubscriptionPayment,
 } from '@/lib/platform';
 
@@ -31,6 +33,7 @@ export default function PlatformBillingPage() {
   const [subscriptions, setSubscriptions] = useState<CompanySubscription[]>([]);
   const [companies, setCompanies] = useState<PlatformCompany[]>([]);
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
+  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [processResult, setProcessResult] =
     useState<BillingOverdueProcessResult | null>(null);
   const [currentTime, setCurrentTime] = useState<number | null>(null);
@@ -41,15 +44,17 @@ export default function PlatformBillingPage() {
   async function refresh() {
     setError('');
     try {
-      const [nextSubscriptions, nextPayments, nextCompanies] =
+      const [nextSubscriptions, nextPayments, nextCompanies, nextInvoices] =
         await Promise.all([
           listBillingSubscriptions(),
           listBillingPayments(),
           listPlatformCompanies(),
+          listSubscriptionInvoices(),
         ]);
       setSubscriptions(nextSubscriptions);
       setPayments(nextPayments);
       setCompanies(nextCompanies);
+      setInvoices(nextInvoices);
       setCurrentTime(Date.now());
     } catch (reason) {
       setError(platformErrorMessage('No se pudo cargar billing.', reason));
@@ -63,16 +68,18 @@ export default function PlatformBillingPage() {
     async function load() {
       setError('');
       try {
-        const [nextSubscriptions, nextPayments, nextCompanies] =
+        const [nextSubscriptions, nextPayments, nextCompanies, nextInvoices] =
           await Promise.all([
             listBillingSubscriptions(),
             listBillingPayments(),
             listPlatformCompanies(),
+            listSubscriptionInvoices(),
           ]);
         if (cancelled) return;
         setSubscriptions(nextSubscriptions);
         setPayments(nextPayments);
         setCompanies(nextCompanies);
+        setInvoices(nextInvoices);
         setCurrentTime(Date.now());
       } catch (reason) {
         if (!cancelled) {
@@ -127,6 +134,18 @@ export default function PlatformBillingPage() {
     (total, subscription) => total + Number(subscription.plan.price),
     0,
   );
+  const invoiceMetrics = {
+    overdue: invoices.filter((invoice) => invoice.status === 'OVERDUE'),
+    paid: invoices.filter((invoice) => invoice.status === 'PAID'),
+    pending: invoices.filter(
+      (invoice) =>
+        invoice.status === 'PENDING' || invoice.status === 'PARTIALLY_PAID',
+    ),
+  };
+  const pendingInvoiceBalance = invoiceMetrics.pending.reduce(
+    (total, invoice) => total + Number(invoice.balance),
+    0,
+  );
 
   return (
     <main className="px-5 py-8">
@@ -140,6 +159,9 @@ export default function PlatformBillingPage() {
           >
             {processing ? 'Procesando...' : 'Procesar vencimientos ahora'}
           </Button>
+          <Link className={platformLinkClass} href="/platform/billing/invoices">
+            Ver facturas
+          </Link>
         </div>
         {error && <p className={platformErrorClass}>{error}</p>}
         {processResult && (
@@ -170,6 +192,25 @@ export default function PlatformBillingPage() {
             label="Sin plan"
             tone="zinc"
             value={grouped.withoutPlan.length}
+          />
+          <PlatformMetricCard
+            label="Facturas pendientes"
+            tone="amber"
+            value={invoiceMetrics.pending.length}
+          />
+          <PlatformMetricCard
+            label="Facturas vencidas"
+            tone="rose"
+            value={invoiceMetrics.overdue.length}
+          />
+          <PlatformMetricCard
+            label="Facturas pagadas"
+            tone="emerald"
+            value={invoiceMetrics.paid.length}
+          />
+          <PlatformMetricCard
+            label="Balance pendiente"
+            value={platformMoney(pendingInvoiceBalance)}
           />
         </section>
 

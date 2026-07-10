@@ -60,12 +60,12 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-screen place-items-center px-6 py-12">
       <form
-        className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-950 p-8 shadow-2xl"
+        className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl"
         onSubmit={(event) => void submit(event)}
       >
-        <p className="text-sm font-semibold text-emerald-400">Comercia ERP</p>
+        <p className="text-sm font-semibold text-blue-600">Comercia ERP</p>
         <h1 className="mt-3 text-3xl font-semibold">Bienvenido de vuelta</h1>
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-slate-500">
           Accede a la administración de tu negocio.
         </p>
         {sessionMessage && (
@@ -96,9 +96,9 @@ export default function LoginPage() {
         <Button className="mt-7 w-full" disabled={submitting} type="submit">
           {submitting ? 'Ingresando…' : 'Iniciar sesión'}
         </Button>
-        <p className="mt-6 text-center text-sm text-slate-400">
+        <p className="mt-6 text-center text-sm text-slate-500">
           ¿Aún no tienes una empresa?{' '}
-          <Link className="text-emerald-400" href="/register">
+          <Link className="text-blue-600" href="/register">
             Regístrala
           </Link>
         </p>

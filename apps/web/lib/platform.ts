@@ -94,6 +94,14 @@ export type CompanySubscriptionStatus =
   | 'CANCELLED';
 export type SubscriptionPaymentMethod =
   'CASH' | 'BANK_TRANSFER' | 'CARD_MANUAL' | 'CHECK' | 'OTHER';
+export type SubscriptionInvoiceStatus =
+  | 'DRAFT'
+  | 'PENDING'
+  | 'PAID'
+  | 'PARTIALLY_PAID'
+  | 'OVERDUE'
+  | 'VOIDED'
+  | 'CANCELLED';
 
 export interface SaasPlan {
   id: string;
@@ -128,9 +136,37 @@ export interface CompanySubscription {
   company?: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
 }
 
+export interface SubscriptionInvoice {
+  id: string;
+  companyId: string;
+  companySubscriptionId: string;
+  planId: string;
+  invoiceNumber: string;
+  status: SubscriptionInvoiceStatus;
+  currency: 'DOP';
+  subtotal: string | number;
+  taxAmount: string | number;
+  discountAmount: string | number;
+  total: string | number;
+  amountPaid: string | number;
+  balance: string | number;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  issueDate: string;
+  dueDate: string;
+  paidAt?: string | null;
+  voidedAt?: string | null;
+  voidReason?: string | null;
+  notes?: string | null;
+  company?: Pick<PlatformCompany, 'id' | 'name' | 'status' | 'email'>;
+  plan: SaasPlan;
+  payments?: SubscriptionPayment[];
+}
+
 export interface SubscriptionPayment {
   id: string;
   companyId: string;
+  subscriptionInvoiceId?: string | null;
   amount: string | number;
   currency: 'DOP';
   method: SubscriptionPaymentMethod;
@@ -138,6 +174,7 @@ export interface SubscriptionPayment {
   notes?: string | null;
   paidAt: string;
   company?: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
+  invoice?: Pick<SubscriptionInvoice, 'id' | 'invoiceNumber' | 'status'> | null;
 }
 
 export interface SubscriptionEvent {
@@ -153,6 +190,7 @@ export interface BillingOverdueProcessResult {
   movedToGrace?: number;
   movedToGracePeriod: number;
   companiesSuspended: number;
+  invoicesOverdue?: number;
   noActionRequired: number;
 }
 
@@ -342,6 +380,7 @@ export function registerSubscriptionPayment(
     notes?: string;
     paidAt: string;
     nextPaymentDueAt?: string;
+    subscriptionInvoiceId?: string;
   },
 ) {
   return platformRequest<{
@@ -372,12 +411,65 @@ export function listSubscriptionEvents(companyId: string) {
 export const getCompanySubscriptionEvents = listSubscriptionEvents;
 
 export async function getPlatformBilling() {
-  const [subscriptions, payments, companies] = await Promise.all([
+  const [subscriptions, payments, companies, invoices] = await Promise.all([
     listBillingSubscriptions(),
     listBillingPayments(),
     listPlatformCompanies(),
+    listSubscriptionInvoices(),
   ]);
-  return { companies, payments, subscriptions };
+  return { companies, invoices, payments, subscriptions };
+}
+
+export function listSubscriptionInvoices() {
+  return platformRequest<SubscriptionInvoice[]>('/platform/billing/invoices');
+}
+
+export function getSubscriptionInvoice(invoiceId: string) {
+  return platformRequest<SubscriptionInvoice>(
+    `/platform/billing/invoices/${invoiceId}`,
+  );
+}
+
+export function createSubscriptionInvoice(body: {
+  companyId: string;
+  companySubscriptionId?: string;
+  planId?: string;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  dueDate: string;
+  subtotal?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  total?: number;
+  notes?: string;
+}) {
+  return platformRequest<SubscriptionInvoice>('/platform/billing/invoices', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function voidSubscriptionInvoice(invoiceId: string, voidReason: string) {
+  return platformRequest<SubscriptionInvoice>(
+    `/platform/billing/invoices/${invoiceId}/void`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ voidReason }),
+    },
+  );
+}
+
+export function markSubscriptionInvoiceOverdue(invoiceId: string) {
+  return platformRequest<SubscriptionInvoice>(
+    `/platform/billing/invoices/${invoiceId}/mark-overdue`,
+    { method: 'POST' },
+  );
+}
+
+export function listCompanySubscriptionInvoices(companyId: string) {
+  return platformRequest<SubscriptionInvoice[]>(
+    `/platform/companies/${companyId}/subscription/invoices`,
+  );
 }
 
 export function processOverdueBilling() {

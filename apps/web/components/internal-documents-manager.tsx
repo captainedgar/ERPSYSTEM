@@ -100,24 +100,24 @@ export function InternalDocumentsManager() {
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Documentos internos
             </p>
             <h1 className="mt-1 text-3xl font-semibold">
               Recibos y facturas no fiscales
             </h1>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               Documentacion interna de ventas sin comprobante fiscal.
             </p>
           </div>
-          <Link className="text-sm text-slate-300" href="/dashboard">
+          <Link className="text-sm text-slate-600" href="/dashboard">
             Volver al panel
           </Link>
         </header>
 
-        <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-950 p-6">
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
           <form
             className="grid gap-3 lg:grid-cols-[1fr_200px_180px_auto]"
             onSubmit={(event: FormEvent) => {
@@ -158,7 +158,7 @@ export function InternalDocumentsManager() {
 
           {error && (
             <div
-              className="mt-5 rounded-2xl border border-rose-900 bg-rose-950/30 p-4 text-sm text-rose-200"
+              className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
               role="alert"
             >
               {error}
@@ -178,7 +178,7 @@ export function InternalDocumentsManager() {
           </div>
 
           {!loading && total > 0 && (
-            <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-sm text-slate-400">
+            <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-500">
               <span>
                 Pagina {page} de {Math.max(1, Math.ceil(total / limit))} ·{' '}
                 {total} documentos
@@ -212,7 +212,7 @@ export function InternalDocumentsManager() {
 function DocumentCard({ document }: { document: InternalDocument }) {
   return (
     <Link
-      className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 transition hover:border-slate-600 sm:grid-cols-[1fr_auto] sm:items-center"
+      className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 sm:grid-cols-[1fr_auto] sm:items-center"
       href={`/internal-documents/${document.id}`}
     >
       <div>
@@ -221,7 +221,7 @@ function DocumentCard({ document }: { document: InternalDocument }) {
           <Status status={document.status} />
           <TypeLabel type={document.documentType} />
         </div>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-slate-500">
           {document.customer?.name ?? 'Consumidor final'} · Venta{' '}
           {document.sale.saleNumber} ·{' '}
           {new Date(document.createdAt).toLocaleString('es-DO')}
@@ -231,7 +231,7 @@ function DocumentCard({ document }: { document: InternalDocument }) {
         <p className="text-lg font-semibold">
           {currency(Number(document.total))}
         </p>
-        <p className="text-xs text-slate-400">{document.createdBy.name}</p>
+        <p className="text-xs text-slate-500">{document.createdBy.name}</p>
       </div>
     </Link>
   );
@@ -240,8 +240,8 @@ function DocumentCard({ document }: { document: InternalDocument }) {
 export function Status({ status }: { status: InternalDocumentStatus }) {
   const styles =
     status === InternalDocumentStatus.ISSUED
-      ? 'bg-emerald-950 text-emerald-300'
-      : 'bg-rose-950 text-rose-300';
+      ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+      : 'border border-red-200 bg-red-50 text-red-700';
   return (
     <span className={`rounded-full px-2 py-1 text-xs ${styles}`}>
       {status === InternalDocumentStatus.ISSUED ? 'Emitido' : 'Anulado'}
@@ -251,7 +251,7 @@ export function Status({ status }: { status: InternalDocumentStatus }) {
 
 export function TypeLabel({ type }: { type: InternalDocumentType }) {
   return (
-    <span className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300">
+    <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-xs text-slate-700">
       {type === InternalDocumentType.RECEIPT ? 'Recibo' : 'Factura interna'}
     </span>
   );

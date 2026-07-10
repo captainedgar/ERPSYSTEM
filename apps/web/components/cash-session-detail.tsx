@@ -89,7 +89,7 @@ export function CashSessionDetail({
         <div>
           <p className="text-rose-300">{error || 'Caja no encontrada'}</p>
           <Link
-            className="mt-4 inline-block text-emerald-400"
+            className="mt-4 inline-block text-blue-600"
             href="/cash/sessions"
           >
             Volver al historial
@@ -102,21 +102,21 @@ export function CashSessionDetail({
   return (
     <main className="min-h-screen px-5 py-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-emerald-400">
+            <p className="text-sm font-semibold text-blue-600">
               Detalle de caja
             </p>
             <div className="mt-1 flex items-center gap-3">
               <h1 className="text-3xl font-semibold">{session.branch.name}</h1>
               <Status status={session.status} />
             </div>
-            <p className="mt-2 text-slate-400">
+            <p className="mt-2 text-slate-500">
               {session.openedBy.name} ·{' '}
               {new Date(session.openedAt).toLocaleString('es-DO')}
             </p>
           </div>
-          <Link className="text-slate-300" href="/cash/sessions">
+          <Link className="text-slate-600" href="/cash/sessions">
             Volver al historial
           </Link>
         </header>
@@ -129,7 +129,7 @@ export function CashSessionDetail({
           <Value label="Efectivo esperado" value={session.expectedCashAmount} />
           <Value label="Efectivo contado" value={session.countedCashAmount} />
           <Value label="Diferencia" value={session.differenceAmount} />
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <dt className="text-xs text-slate-500">Cierre</dt>
             <dd className="mt-2 font-medium">
               {session.closedAt
@@ -140,7 +140,7 @@ export function CashSessionDetail({
         </dl>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Movimientos</h2>
             <div className="mt-4 grid gap-3">
               {!session.movements?.length ? (
@@ -150,19 +150,19 @@ export function CashSessionDetail({
               ) : (
                 session.movements.map((movement) => (
                   <article
-                    className="grid gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:grid-cols-[1fr_auto]"
+                    className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[1fr_auto]"
                     key={movement.id}
                   >
                     <div>
                       <p className="font-medium">
                         {movementLabels[movement.type]}
                       </p>
-                      <p className="mt-1 text-sm text-slate-400">
+                      <p className="mt-1 text-sm text-slate-500">
                         {movement.reason} · {movement.createdBy.name}
                       </p>
                       {movement.sale && (
                         <Link
-                          className="mt-1 inline-block text-xs text-emerald-400"
+                          className="mt-1 inline-block text-xs text-blue-600"
                           href={`/sales/${movement.sale.id}`}
                         >
                           {movement.sale.saleNumber}
@@ -184,7 +184,7 @@ export function CashSessionDetail({
             </div>
           </section>
 
-          <aside className="h-fit rounded-3xl border border-slate-800 bg-slate-950 p-6">
+          <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-6">
             <h2 className="text-xl font-semibold">Ventas relacionadas</h2>
             <div className="mt-4 grid gap-3">
               {!session.sales?.length ? (
@@ -194,12 +194,12 @@ export function CashSessionDetail({
               ) : (
                 session.sales.map((sale) => (
                   <Link
-                    className="rounded-xl bg-slate-900 p-3"
+                    className="rounded-xl bg-slate-50 p-3"
                     href={`/sales/${sale.id}`}
                     key={sale.id}
                   >
                     <p className="font-medium">{sale.saleNumber}</p>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-slate-500">
                       {currency(Number(sale.total))}
                     </p>
                   </Link>
@@ -209,7 +209,7 @@ export function CashSessionDetail({
             {session.notes && (
               <>
                 <h2 className="mt-6 text-lg font-semibold">Notas</h2>
-                <p className="mt-2 text-sm text-slate-400">{session.notes}</p>
+                <p className="mt-2 text-sm text-slate-500">{session.notes}</p>
               </>
             )}
           </aside>
@@ -227,7 +227,7 @@ function Value({
   value: string | number | null;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-2 font-semibold">
         {value === null ? '—' : currency(Number(value))}
