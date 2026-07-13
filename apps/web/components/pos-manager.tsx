@@ -3,7 +3,7 @@
 import { Button } from '@comercia/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import { CustomerStatus, listCustomers, type Customer } from '@/lib/customers';
@@ -15,12 +15,10 @@ import {
   type CartValidationResponse,
   type PosItem,
 } from '@/lib/pos';
+import { addPosItemToCart, type PosCartLine } from '@/lib/pos-cart';
 import { createSale, PaymentMethod, type Sale } from '@/lib/sales';
 
-interface CartLine extends PosItem {
-  quantity: number;
-  discountAmount: number;
-}
+type CartLine = PosCartLine;
 
 interface PaymentLine {
   id: string;
@@ -55,12 +53,18 @@ export function PosManager() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState('');
+  const [scanCode, setScanCode] = useState('');
+  const [scanFeedback, setScanFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [type, setType] = useState<PosSearchType>(PosSearchType.ALL);
   const [customerId, setCustomerId] = useState('');
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [initializing, setInitializing] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [validating, setValidating] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
   const [error, setError] = useState('');
@@ -70,6 +74,7 @@ export function PosManager() {
   const [validation, setValidation] = useState<CartValidationResponse | null>(
     null,
   );
+  const scanInputRef = useRef<HTMLInputElement>(null);
 
   const role = user?.role.code;
   const canUsePos = ['OWNER', 'ADMIN', 'CASHIER', 'SELLER'].includes(
@@ -120,6 +125,12 @@ export function PosManager() {
       cancelled = true;
     };
   }, [canUsePos, user]);
+
+  useEffect(() => {
+    if (!authLoading && !initializing && canUsePos) {
+      scanInputRef.current?.focus();
+    }
+  }, [authLoading, canUsePos, initializing]);
 
   const totals = useMemo(
     () =>
@@ -173,21 +184,61 @@ export function PosManager() {
     }
   }
 
-  function addItem(item: PosItem) {
+  function addItem(item: PosItem, showFeedback = false) {
     setValidation(null);
     setCreatedSale(null);
-    setCart((current) => {
-      const existing = current.find(
-        (line) => line.id === item.id && line.type === item.type,
+    const result = addPosItemToCart(cart, item);
+    setCart(result.cart);
+    if (showFeedback) {
+      setScanFeedback({
+        type: result.ok ? 'success' : 'error',
+        message: result.message,
+      });
+    } else if (!result.ok) {
+      setError(result.message);
+    }
+    return result.ok;
+  }
+
+  async function submitScan() {
+    const code = scanCode.trim();
+    if (!code || scanning) return;
+
+    setScanning(true);
+    setError('');
+    setScanFeedback(null);
+    try {
+      const response = await searchPosItems({
+        search: code,
+        type: PosSearchType.PRODUCT,
+        page: 1,
+        limit: 10,
+      });
+      const item = response.items.find(
+        (candidate) =>
+          candidate.type === PosItemType.PRODUCT &&
+          candidate.barcode?.toLocaleLowerCase() === code.toLocaleLowerCase(),
       );
-      return existing
-        ? current.map((line) =>
-            line === existing
-              ? { ...line, quantity: roundQuantity(line.quantity + 1) }
-              : line,
-          )
-        : [...current, { ...item, quantity: 1, discountAmount: 0 }];
-    });
+      if (!item) {
+        setScanFeedback({
+          type: 'error',
+          message: 'No encontramos un producto con ese código.',
+        });
+        return;
+      }
+      if (addItem(item, true)) setScanCode('');
+    } catch (reason) {
+      setScanFeedback({
+        type: 'error',
+        message:
+          reason instanceof Error
+            ? reason.message
+            : 'No se pudo buscar el código escaneado.',
+      });
+    } finally {
+      setScanning(false);
+      requestAnimationFrame(() => scanInputRef.current?.focus());
+    }
   }
 
   function updateLine(
@@ -410,7 +461,57 @@ export function PosManager() {
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(420px,0.65fr)]">
           <section className="rounded-3xl border border-slate-200 bg-white p-5">
             <form
-              className="grid gap-3 sm:grid-cols-[1fr_170px_auto]"
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+              onSubmit={(event: FormEvent) => {
+                event.preventDefault();
+                void submitScan();
+              }}
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <label className="flex-1">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                    <span aria-hidden="true" className="text-lg">
+                      ||
+                    </span>
+                    Escanear producto
+                  </span>
+                  <input
+                    aria-label="Código de barras para escanear producto"
+                    className="mt-2 h-12 text-lg"
+                    placeholder="Código de barras"
+                    ref={scanInputRef}
+                    value={scanCode}
+                    onChange={(event) => setScanCode(event.target.value)}
+                  />
+                </label>
+                <Button
+                  className="h-12 lg:w-36"
+                  disabled={scanning || !scanCode.trim()}
+                  type="submit"
+                  variant="secondary"
+                >
+                  {scanning ? 'Buscando...' : 'Agregar'}
+                </Button>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                Escanea con lector USB o escribe el código y presiona Enter.
+              </p>
+              {scanFeedback && (
+                <p
+                  className={`mt-3 text-sm font-semibold ${
+                    scanFeedback.type === 'success'
+                      ? 'text-emerald-700'
+                      : 'text-red-700'
+                  }`}
+                  role="status"
+                >
+                  {scanFeedback.message}
+                </p>
+              )}
+            </form>
+
+            <form
+              className="mt-5 grid gap-3 sm:grid-cols-[1fr_170px_auto]"
               onSubmit={(event: FormEvent) => {
                 event.preventDefault();
                 void runSearch(1);
@@ -418,7 +519,6 @@ export function PosManager() {
             >
               <input
                 aria-label="Buscar productos y servicios"
-                autoFocus
                 placeholder="Nombre, descripción, SKU o código de barra…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -843,8 +943,4 @@ function currency(value: number) {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-function roundQuantity(value: number) {
-  return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }

@@ -2016,6 +2016,18 @@ describe('Identity and multi-company isolation (e2e)', () => {
       },
       companyA.accessToken,
     );
+    const partialBarcodeMatch = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: '7461234567890 Accesorio',
+        sku: 'POS-SKU-002',
+        barcode: '9991234567890',
+        price: 25,
+        stock: 2,
+      },
+      companyA.accessToken,
+    );
     const service = await http<Service>(
       'POST',
       '/services',
@@ -2030,7 +2042,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     const inactiveProduct = await http<Product>(
       'POST',
       '/products',
-      { name: 'Producto POS inactivo', price: 5 },
+      {
+        name: 'Producto POS inactivo',
+        barcode: '7469999999999',
+        price: 5,
+      },
       companyA.accessToken,
     );
     const inactiveService = await http<Service>(
@@ -2042,7 +2058,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     const foreignProduct = await http<Product>(
       'POST',
       '/products',
-      { name: 'Producto empresa B', price: 10 },
+      {
+        name: 'Producto empresa B',
+        barcode: '7461234567890',
+        price: 10,
+      },
       companyB.accessToken,
     );
     await http<Product>(
@@ -2080,6 +2100,12 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       companyA.accessToken,
     );
+    const inactiveByBarcode = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/pos/search-items?search=7469999999999',
+      undefined,
+      companyA.accessToken,
+    );
     const services = await http<{
       items: Array<{ id: string; type: PosItemType; stock: null }>;
     }>(
@@ -2097,9 +2123,9 @@ describe('Identity and multi-company isolation (e2e)', () => {
 
     expect(anonymous.status).toBe(401);
     expect(all.status).toBe(200);
-    expect(all.body.total).toBe(2);
+    expect(all.body.total).toBe(3);
     expect(all.body.items.map(({ id }) => id).sort()).toEqual(
-      [product.body.id, service.body.id].sort(),
+      [product.body.id, partialBarcodeMatch.body.id, service.body.id].sort(),
     );
     expect(all.body.items.map(({ id }) => id)).not.toContain(
       foreignProduct.body.id,
@@ -2111,7 +2137,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       inactiveService.body.id,
     );
     expect(bySku.body.items.map(({ id }) => id)).toEqual([product.body.id]);
-    expect(byBarcode.body.items.map(({ id }) => id)).toEqual([product.body.id]);
+    expect(byBarcode.body.items.map(({ id }) => id)).toEqual([
+      product.body.id,
+      partialBarcodeMatch.body.id,
+    ]);
+    expect(inactiveByBarcode.body.items).toEqual([]);
     expect(services.body.items).toEqual([
       expect.objectContaining({
         id: service.body.id,

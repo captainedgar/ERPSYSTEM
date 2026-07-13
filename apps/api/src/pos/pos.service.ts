@@ -130,7 +130,9 @@ export class PosService {
         ? this.prisma.product.findMany({
             where: productWhere,
             include: productInclude,
-            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            orderBy: search
+              ? [{ barcode: 'asc' }, { name: 'asc' }, { id: 'asc' }]
+              : [{ name: 'asc' }, { id: 'asc' }],
             take: requested,
           })
         : Promise.resolve([]),
@@ -153,12 +155,26 @@ export class PosService {
     const combined = [
       ...products.map((product) => this.productResult(product)),
       ...services.map((service) => this.serviceResult(service)),
-    ].sort(
-      (left, right) =>
+    ].sort((left, right) => {
+      const leftExactBarcode =
+        search &&
+        left.type === PosItemType.PRODUCT &&
+        left.barcode?.toLocaleLowerCase() === search.toLocaleLowerCase();
+      const rightExactBarcode =
+        search &&
+        right.type === PosItemType.PRODUCT &&
+        right.barcode?.toLocaleLowerCase() === search.toLocaleLowerCase();
+
+      if (leftExactBarcode !== rightExactBarcode) {
+        return leftExactBarcode ? -1 : 1;
+      }
+
+      return (
         left.name.localeCompare(right.name, 'es', { sensitivity: 'base' }) ||
         left.type.localeCompare(right.type) ||
-        left.id.localeCompare(right.id),
-    );
+        left.id.localeCompare(right.id)
+      );
+    });
 
     return {
       items: combined.slice((page - 1) * limit, page * limit),
