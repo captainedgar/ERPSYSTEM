@@ -16,6 +16,11 @@ import {
   type PosItem,
 } from '@/lib/pos';
 import { addPosItemToCart, type PosCartLine } from '@/lib/pos-cart';
+import {
+  getPosAlternatives,
+  getPosAlternativesByCode,
+  type ProductAlternative,
+} from '@/lib/product-compatibility';
 import { createSale, PaymentMethod, type Sale } from '@/lib/sales';
 
 type CartLine = PosCartLine;
@@ -58,6 +63,8 @@ export function PosManager() {
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [alternatives, setAlternatives] = useState<ProductAlternative[]>([]);
+  const [alternativesMessage, setAlternativesMessage] = useState('');
   const [type, setType] = useState<PosSearchType>(PosSearchType.ALL);
   const [customerId, setCustomerId] = useState('');
   const [page, setPage] = useState(1);
@@ -163,6 +170,8 @@ export function PosManager() {
   async function runSearch(nextPage = 1) {
     setSearching(true);
     setError('');
+    setAlternatives([]);
+    setAlternativesMessage('');
     try {
       const response = await searchPosItems({
         search: search.trim() || undefined,
@@ -196,8 +205,43 @@ export function PosManager() {
       });
     } else if (!result.ok) {
       setError(result.message);
+      if (item.type === PosItemType.PRODUCT) {
+        void loadAlternativesForProduct(
+          item.id,
+          'Alternativas compatibles con stock',
+        );
+      }
     }
     return result.ok;
+  }
+
+  async function loadAlternativesForProduct(
+    productId: string,
+    message: string,
+  ) {
+    try {
+      const response = await getPosAlternatives(productId);
+      setAlternatives(response.alternatives);
+      setAlternativesMessage(response.alternatives.length ? message : '');
+    } catch {
+      setAlternatives([]);
+      setAlternativesMessage('');
+    }
+  }
+
+  async function loadAlternativesByCode(code: string) {
+    try {
+      const response = await getPosAlternativesByCode(code);
+      setAlternatives(response.alternatives);
+      setAlternativesMessage(
+        response.alternatives.length
+          ? 'No encontramos ese producto exacto, pero hay alternativas compatibles registradas.'
+          : '',
+      );
+    } catch {
+      setAlternatives([]);
+      setAlternativesMessage('');
+    }
   }
 
   async function submitScan() {
@@ -220,13 +264,23 @@ export function PosManager() {
           candidate.barcode?.toLocaleLowerCase() === code.toLocaleLowerCase(),
       );
       if (!item) {
+        await loadAlternativesByCode(code);
         setScanFeedback({
           type: 'error',
           message: 'No encontramos un producto con ese código.',
         });
         return;
       }
-      if (addItem(item, true)) setScanCode('');
+      if (addItem(item, true)) {
+        setScanCode('');
+        setAlternatives([]);
+        setAlternativesMessage('');
+      } else {
+        await loadAlternativesForProduct(
+          item.id,
+          'Alternativas compatibles con stock',
+        );
+      }
     } catch (reason) {
       setScanFeedback({
         type: 'error',
@@ -510,6 +564,14 @@ export function PosManager() {
               )}
             </form>
 
+            {alternatives.length > 0 && (
+              <AlternativesPanel
+                alternatives={alternatives}
+                message={alternativesMessage}
+                onAdd={(item) => addItem(alternativeToPosItem(item), true)}
+              />
+            )}
+
             <form
               className="mt-5 grid gap-3 sm:grid-cols-[1fr_170px_auto]"
               onSubmit={(event: FormEvent) => {
@@ -554,6 +616,12 @@ export function PosManager() {
                     item={item}
                     key={`${item.type}:${item.id}`}
                     onAdd={addItem}
+                    onViewAlternatives={(product) =>
+                      void loadAlternativesForProduct(
+                        product.id,
+                        'Alternativas compatibles con stock',
+                      )
+                    }
                   />
                 ))
               )}
@@ -773,10 +841,17 @@ export function PosManager() {
 function PosResultCard({
   item,
   onAdd,
+  onViewAlternatives,
 }: {
   item: PosItem;
   onAdd: (item: PosItem) => void;
+  onViewAlternatives?: (item: PosItem) => void;
 }) {
+  const canShowAlternatives =
+    item.type === PosItemType.PRODUCT &&
+    item.trackInventory &&
+    Number(item.stock) <= 0;
+
   return (
     <article className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div>
@@ -799,15 +874,82 @@ function PosResultCard({
             : ''}
         </p>
       </div>
-      <Button
-        className="mt-4"
-        onClick={() => onAdd(item)}
-        type="button"
-        variant="secondary"
-      >
-        Agregar
-      </Button>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <Button
+          className="flex-1"
+          onClick={() => onAdd(item)}
+          type="button"
+          variant="secondary"
+        >
+          Agregar
+        </Button>
+        {canShowAlternatives && onViewAlternatives && (
+          <Button
+            className="flex-1"
+            onClick={() => onViewAlternatives(item)}
+            type="button"
+            variant="secondary"
+          >
+            Ver alternativas
+          </Button>
+        )}
+      </div>
     </article>
+  );
+}
+
+function AlternativesPanel({
+  alternatives,
+  message,
+  onAdd,
+}: {
+  alternatives: ProductAlternative[];
+  message: string;
+  onAdd: (item: ProductAlternative) => void;
+}) {
+  return (
+    <section className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+      <div>
+        <h2 className="font-semibold text-slate-950">
+          Alternativas compatibles con stock
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          {message ||
+            'Estas alternativas fueron registradas como compatibles en el catalogo.'}
+        </p>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {alternatives.map((item) => (
+          <article
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            key={item.id}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">{item.name}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {item.sku ?? item.barcode ?? 'Sin codigo'} /{' '}
+                  {item.brand?.name ?? 'Sin marca'}
+                </p>
+              </div>
+              <p className="font-semibold">{currency(Number(item.price))}</p>
+            </div>
+            <p className="mt-2 text-xs text-blue-700">{item.reason}</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Stock {Number(item.stock)}
+            </p>
+            <Button
+              className="mt-3 w-full"
+              onClick={() => onAdd(item)}
+              type="button"
+              variant="secondary"
+            >
+              Agregar
+            </Button>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -943,4 +1085,24 @@ function currency(value: number) {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function alternativeToPosItem(item: ProductAlternative): PosItem {
+  return {
+    id: item.id,
+    type: PosItemType.PRODUCT,
+    name: item.name,
+    description: item.reason,
+    sku: item.sku,
+    barcode: item.barcode,
+    price: item.price,
+    taxRate: item.taxRate,
+    stock: item.stock,
+    trackInventory: item.trackInventory,
+    allowDiscount: item.allowDiscount,
+    status: 'ACTIVE',
+    category: null,
+    brand: item.brand,
+    unit: null,
+  };
 }

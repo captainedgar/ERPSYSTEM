@@ -6,6 +6,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -16,9 +17,13 @@ import { CurrentPlatformUser } from './current-platform-user.decorator';
 import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformBillingService } from './platform-billing.service';
 import {
+  CancelSubscriptionPaymentLinkDto,
   CreateSaasPlanDto,
   CreateSubscriptionInvoiceDto,
+  CreateSubscriptionPaymentLinkDto,
+  ReportSubscriptionPaymentDto,
   RegisterSubscriptionPaymentDto,
+  SubscriptionPaymentLinkQueryDto,
   UpdateSaasPlanDto,
   UpdateSaasPlanStatusDto,
   UpsertCompanySubscriptionDto,
@@ -153,6 +158,45 @@ export class PlatformBillingController {
     return this.billing.getInvoice(id);
   }
 
+  @Get('billing/invoices/:id/payment-links')
+  listInvoicePaymentLinks(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Query() query: SubscriptionPaymentLinkQueryDto,
+  ) {
+    return this.billing.listInvoicePaymentLinks(user, id, query);
+  }
+
+  @Post('billing/invoices/:id/payment-links')
+  createInvoicePaymentLink(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: CreateSubscriptionPaymentLinkDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.createInvoicePaymentLink(
+      user,
+      id,
+      dto,
+      requestContext(request),
+    );
+  }
+
+  @Post('billing/payment-links/:id/cancel')
+  cancelInvoicePaymentLink(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: CancelSubscriptionPaymentLinkDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.cancelInvoicePaymentLink(
+      user,
+      id,
+      dto,
+      requestContext(request),
+    );
+  }
+
   @Post('billing/invoices/:id/void')
   voidInvoice(
     @CurrentPlatformUser() user: PlatformAuthUser,
@@ -184,6 +228,30 @@ export class PlatformBillingController {
   ) {
     return this.billing.processOverdueSubscriptions(
       user,
+      requestContext(request),
+    );
+  }
+}
+
+@Public()
+@Controller('pay/invoice')
+export class PublicSubscriptionPaymentLinkController {
+  constructor(private readonly billing: PlatformBillingService) {}
+
+  @Get(':token')
+  getPaymentLink(@Param('token') token: string) {
+    return this.billing.getPublicPaymentLink(token);
+  }
+
+  @Post(':token/report')
+  reportPayment(
+    @Param('token') token: string,
+    @Body() dto: ReportSubscriptionPaymentDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.reportPublicPayment(
+      token,
+      dto,
       requestContext(request),
     );
   }

@@ -3,6 +3,7 @@ import {
   Currency,
   SaasBillingInterval,
   SubscriptionInvoiceStatus,
+  SubscriptionPaymentLinkStatus,
   SubscriptionPaymentMethod,
 } from '@prisma/client';
 import {
@@ -227,4 +228,53 @@ export class VoidSubscriptionInvoiceDto {
   @IsString()
   @MaxLength(500)
   voidReason!: string;
+}
+
+export class CreateSubscriptionPaymentLinkDto {
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
+}
+
+export class CancelSubscriptionPaymentLinkDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class SubscriptionPaymentLinkQueryDto {
+  @IsOptional()
+  @IsEnum(SubscriptionPaymentLinkStatus)
+  status?: SubscriptionPaymentLinkStatus;
+}
+
+export class ReportSubscriptionPaymentDto {
+  @IsNumber()
+  @Min(0.01)
+  amount!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  payerName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  payerEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
 }

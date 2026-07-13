@@ -270,12 +270,20 @@ export function CatalogManager({ kind }: { kind: CatalogKind }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {kind === 'products' && (
-              <Link
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-                href="/catalog/products/import"
-              >
-                Importar Excel
-              </Link>
+              <>
+                <Link
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                  href="/catalog/products/import"
+                >
+                  Importar Excel
+                </Link>
+                <Link
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-950"
+                  href="/catalog/compatibility"
+                >
+                  Compatibilidad
+                </Link>
+              </>
             )}
             <Link
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-950"

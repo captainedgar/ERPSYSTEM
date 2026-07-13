@@ -17,10 +17,14 @@ import {
   platformPanelClass,
 } from '@/components/platform-ui';
 import {
+  cancelSubscriptionPaymentLink,
+  createSubscriptionPaymentLink,
   getSubscriptionInvoice,
+  listSubscriptionPaymentLinks,
   registerCompanySubscriptionPayment,
   voidSubscriptionInvoice,
   type SubscriptionInvoice,
+  type SubscriptionPaymentLink,
   type SubscriptionPaymentMethod,
 } from '@/lib/platform';
 
@@ -35,9 +39,13 @@ const paymentMethods: SubscriptionPaymentMethod[] = [
 export default function PlatformInvoiceDetailPage() {
   const params = useParams<{ id: string }>();
   const [invoice, setInvoice] = useState<SubscriptionInvoice | null>(null);
+  const [paymentLinks, setPaymentLinks] = useState<SubscriptionPaymentLink[]>(
+    [],
+  );
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [linkExpiresAt, setLinkExpiresAt] = useState('');
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     method: 'BANK_TRANSFER' as SubscriptionPaymentMethod,
@@ -48,8 +56,12 @@ export default function PlatformInvoiceDetailPage() {
   const [voidReason, setVoidReason] = useState('');
 
   async function refresh() {
-    const nextInvoice = await getSubscriptionInvoice(params.id);
+    const [nextInvoice, nextLinks] = await Promise.all([
+      getSubscriptionInvoice(params.id),
+      listSubscriptionPaymentLinks(params.id),
+    ]);
     setInvoice(nextInvoice);
+    setPaymentLinks(nextLinks);
     setPaymentForm((current) => ({
       ...current,
       amount: current.amount || String(Number(nextInvoice.balance)),
@@ -60,9 +72,13 @@ export default function PlatformInvoiceDetailPage() {
     let cancelled = false;
     async function load() {
       try {
-        const nextInvoice = await getSubscriptionInvoice(params.id);
+        const [nextInvoice, nextLinks] = await Promise.all([
+          getSubscriptionInvoice(params.id),
+          listSubscriptionPaymentLinks(params.id),
+        ]);
         if (cancelled) return;
         setInvoice(nextInvoice);
+        setPaymentLinks(nextLinks);
         setPaymentForm((current) => ({
           ...current,
           amount: String(Number(nextInvoice.balance)),
@@ -130,6 +146,51 @@ export default function PlatformInvoiceDetailPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function createPaymentLink() {
+    if (!invoice) return;
+    setSubmitting(true);
+    setError('');
+    setMessage('');
+    try {
+      const link = await createSubscriptionPaymentLink(invoice.id, {
+        expiresAt: linkExpiresAt || undefined,
+      });
+      setPaymentLinks((current) => [link, ...current]);
+      setLinkExpiresAt('');
+      setMessage('Link de pago generado correctamente.');
+    } catch (reason) {
+      setError(platformErrorMessage('No se pudo generar el link.', reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function cancelPaymentLink(link: SubscriptionPaymentLink) {
+    setSubmitting(true);
+    setError('');
+    setMessage('');
+    try {
+      const cancelled = await cancelSubscriptionPaymentLink(
+        link.id,
+        'Cancelado desde Platform Admin',
+      );
+      setPaymentLinks((current) =>
+        current.map((item) => (item.id === cancelled.id ? cancelled : item)),
+      );
+      setMessage('Link de pago cancelado.');
+    } catch (reason) {
+      setError(platformErrorMessage('No se pudo cancelar el link.', reason));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function copyPaymentLink(token: string) {
+    const url = paymentUrl(token);
+    await navigator.clipboard?.writeText(url);
+    setMessage('Link copiado al portapapeles.');
   }
 
   if (!invoice && !error) {
@@ -228,6 +289,86 @@ export default function PlatformInvoiceDetailPage() {
               </div>
 
               <div className="grid gap-6">
+                <div className={platformPanelClass}>
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    Links de pago
+                  </h2>
+                  <div className="mt-4 grid gap-3">
+                    <Field
+                      label="Expira en (opcional)"
+                      onChange={setLinkExpiresAt}
+                      type="date"
+                      value={linkExpiresAt}
+                    />
+                    <Button
+                      disabled={
+                        submitting ||
+                        invoice.status === 'PAID' ||
+                        invoice.status === 'VOIDED' ||
+                        invoice.status === 'CANCELLED'
+                      }
+                      onClick={() => void createPaymentLink()}
+                      type="button"
+                    >
+                      Generar link
+                    </Button>
+                  </div>
+                  <div className="mt-5 grid gap-3">
+                    {paymentLinks.length ? (
+                      paymentLinks.map((link) => (
+                        <div
+                          className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                          key={link.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-950">
+                                {link.status} / {platformMoney(link.amount)}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-slate-500">
+                                {paymentUrl(link.token)}
+                              </p>
+                              {link.expiresAt && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Expira: {formatDate(link.expiresAt)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              onClick={() => void copyPaymentLink(link.token)}
+                              type="button"
+                              variant="secondary"
+                            >
+                              Copiar
+                            </Button>
+                            <Button
+                              disabled={submitting || link.status !== 'ACTIVE'}
+                              onClick={() => void cancelPaymentLink(link)}
+                              type="button"
+                              variant="secondary"
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                          {link.reports?.length ? (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                              {link.reports.length} pago(s) reportado(s).
+                              Ultimo: {platformMoney(link.reports[0]?.amount)} /{' '}
+                              {link.reports[0]?.reference ?? 'sin referencia'}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                        Sin links generados.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <form
                   className={platformPanelClass}
                   onSubmit={(event) => void submitPayment(event)}
@@ -426,6 +567,14 @@ function Field({
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function paymentUrl(token: string) {
+  const origin =
+    typeof window === 'undefined'
+      ? 'http://localhost:3000'
+      : window.location.origin;
+  return `${origin}/pay/invoice/${token}`;
 }
 
 function formatDate(value: string) {

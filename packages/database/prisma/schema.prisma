@@ -254,53 +254,94 @@ enum SubscriptionInvoiceStatus {
   CANCELLED
 }
 
+enum SubscriptionPaymentLinkStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PAID
+}
+
+enum SubscriptionPaymentReportStatus {
+  REPORTED
+  REVIEWED
+  DISCARDED
+}
+
+enum ProductCompatibilityGroupStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProductAlternativeCodeType {
+  OEM
+  MANUFACTURER
+  REPLACEMENT
+  OLD_CODE
+  BARCODE
+  OTHER
+}
+
+enum ProductSubstituteType {
+  EQUIVALENT
+  SUBSTITUTE
+  UPGRADE
+  DOWNGRADE
+  RELATED
+}
+
 model Company {
-  id                    String                     @id @default(cuid())
-  name                  String
-  legalName             String?
-  rncOrCedula           String?                    @unique
-  phone                 String?
-  email                 String?
-  address               String?
-  logoUrl               String?
-  logoFileKey           String?
-  logoUpdatedAt         DateTime?
-  businessType          BusinessType
-  status                CompanyStatus              @default(ACTIVE)
-  branches              Branch[]
-  userBranchMemberships UserBranchMembership[]
-  users                 User[]
-  roles                 Role[]
-  settings              BusinessSettings?
-  auditLogs             AuditLog[]
-  categories            Category[]
-  brands                Brand[]
-  units                 Unit[]
-  products              Product[]
-  services              Service[]
-  customers             Customer[]
-  sales                 Sale[]
-  saleItems             SaleItem[]
-  payments              Payment[]
-  internalDocuments     InternalDocument[]
-  internalDocumentItems InternalDocumentItem[]
-  documentSequences     DocumentSequence[]
-  fiscalSettings        FiscalSettings?
-  fiscalProviders       FiscalProvider[]
-  fiscalCredentials     FiscalProviderCredential[]
-  electronicInvoices    ElectronicInvoice[]
-  electronicEvents      ElectronicInvoiceEvent[]
-  fiscalErrors          FiscalError[]
-  cashSessions          CashSession[]
-  cashMovements         CashMovement[]
-  inventoryMovements    InventoryMovement[]
-  subscription          CompanySubscription?
-  subscriptionPayments  SubscriptionPayment[]
-  subscriptionEvents    SubscriptionEvent[]
-  subscriptionInvoices  SubscriptionInvoice[]
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
-  deletedAt             DateTime?
+  id                         String                          @id @default(cuid())
+  name                       String
+  legalName                  String?
+  rncOrCedula                String?                         @unique
+  phone                      String?
+  email                      String?
+  address                    String?
+  logoUrl                    String?
+  logoFileKey                String?
+  logoUpdatedAt              DateTime?
+  businessType               BusinessType
+  status                     CompanyStatus                   @default(ACTIVE)
+  branches                   Branch[]
+  userBranchMemberships      UserBranchMembership[]
+  users                      User[]
+  roles                      Role[]
+  settings                   BusinessSettings?
+  auditLogs                  AuditLog[]
+  categories                 Category[]
+  brands                     Brand[]
+  units                      Unit[]
+  products                   Product[]
+  services                   Service[]
+  customers                  Customer[]
+  sales                      Sale[]
+  saleItems                  SaleItem[]
+  payments                   Payment[]
+  internalDocuments          InternalDocument[]
+  internalDocumentItems      InternalDocumentItem[]
+  documentSequences          DocumentSequence[]
+  fiscalSettings             FiscalSettings?
+  fiscalProviders            FiscalProvider[]
+  fiscalCredentials          FiscalProviderCredential[]
+  electronicInvoices         ElectronicInvoice[]
+  electronicEvents           ElectronicInvoiceEvent[]
+  fiscalErrors               FiscalError[]
+  cashSessions               CashSession[]
+  cashMovements              CashMovement[]
+  inventoryMovements         InventoryMovement[]
+  subscription               CompanySubscription?
+  subscriptionPayments       SubscriptionPayment[]
+  subscriptionEvents         SubscriptionEvent[]
+  subscriptionInvoices       SubscriptionInvoice[]
+  subscriptionPaymentLinks   SubscriptionPaymentLink[]
+  subscriptionPaymentReports SubscriptionPaymentReport[]
+  productCompatibilityGroups ProductCompatibilityGroup[]
+  productCompatibilityItems  ProductCompatibilityGroupItem[]
+  productAlternativeCodes    ProductAlternativeCode[]
+  productSubstitutes         ProductSubstitute[]
+  createdAt                  DateTime                        @default(now())
+  updatedAt                  DateTime                        @updatedAt
+  deletedAt                  DateTime?
 
   @@map("companies")
 }
@@ -555,7 +596,7 @@ model Unit {
 }
 
 model Product {
-  id                    String                 @id @default(cuid())
+  id                    String                          @id @default(cuid())
   companyId             String
   categoryId            String?
   brandId               String?
@@ -564,24 +605,28 @@ model Product {
   description           String?
   sku                   String?
   barcode               String?
-  cost                  Decimal                @default(0) @db.Decimal(12, 2)
-  price                 Decimal                @default(0) @db.Decimal(12, 2)
-  taxRate               Decimal                @default(18) @db.Decimal(5, 2)
-  stock                 Decimal                @default(0) @db.Decimal(14, 3)
-  minStock              Decimal                @default(0) @db.Decimal(14, 3)
-  trackInventory        Boolean                @default(true)
-  allowDiscount         Boolean                @default(true)
+  cost                  Decimal                         @default(0) @db.Decimal(12, 2)
+  price                 Decimal                         @default(0) @db.Decimal(12, 2)
+  taxRate               Decimal                         @default(18) @db.Decimal(5, 2)
+  stock                 Decimal                         @default(0) @db.Decimal(14, 3)
+  minStock              Decimal                         @default(0) @db.Decimal(14, 3)
+  trackInventory        Boolean                         @default(true)
+  allowDiscount         Boolean                         @default(true)
   imageUrl              String?
-  status                CatalogStatus          @default(ACTIVE)
-  company               Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  category              Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  brand                 Brand?                 @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  unit                  Unit?                  @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  status                CatalogStatus                   @default(ACTIVE)
+  company               Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category              Category?                       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand                 Brand?                          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  unit                  Unit?                           @relation(fields: [unitId], references: [id], onDelete: SetNull)
   saleItems             SaleItem[]
   internalDocumentItems InternalDocumentItem[]
   inventoryMovements    InventoryMovement[]
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  compatibilityGroups   ProductCompatibilityGroupItem[]
+  alternativeCodes      ProductAlternativeCode[]
+  substitutes           ProductSubstitute[]             @relation("ProductSubstitutes")
+  substituteFor         ProductSubstitute[]             @relation("SubstituteProducts")
+  createdAt             DateTime                        @default(now())
+  updatedAt             DateTime                        @updatedAt
   deletedAt             DateTime?
 
   @@unique([companyId, sku])
@@ -590,6 +635,78 @@ model Product {
   @@index([companyId, categoryId])
   @@index([companyId, brandId])
   @@map("products")
+}
+
+model ProductCompatibilityGroup {
+  id          String                          @id @default(cuid())
+  companyId   String
+  name        String
+  code        String
+  description String?
+  status      ProductCompatibilityGroupStatus @default(ACTIVE)
+  company     Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products    ProductCompatibilityGroupItem[]
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId, status, name])
+  @@map("product_compatibility_groups")
+}
+
+model ProductCompatibilityGroupItem {
+  id        String                    @id @default(cuid())
+  companyId String
+  groupId   String
+  productId String
+  company   Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  group     ProductCompatibilityGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  product   Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime                  @default(now())
+
+  @@unique([groupId, productId])
+  @@index([companyId])
+  @@index([productId])
+  @@map("product_compatibility_group_items")
+}
+
+model ProductAlternativeCode {
+  id        String                     @id @default(cuid())
+  companyId String
+  productId String
+  code      String
+  type      ProductAlternativeCodeType @default(OTHER)
+  company   Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product   Product                    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([productId])
+  @@map("product_alternative_codes")
+}
+
+model ProductSubstitute {
+  id                  String                @id @default(cuid())
+  companyId           String
+  productId           String
+  substituteProductId String
+  type                ProductSubstituteType @default(SUBSTITUTE)
+  notes               String?
+  isBidirectional     Boolean               @default(true)
+  priority            Int                   @default(0)
+  company             Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product             Product               @relation("ProductSubstitutes", fields: [productId], references: [id], onDelete: Cascade)
+  substituteProduct   Product               @relation("SubstituteProducts", fields: [substituteProductId], references: [id], onDelete: Cascade)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([companyId, productId, substituteProductId])
+  @@index([companyId])
+  @@index([productId])
+  @@index([substituteProductId])
+  @@map("product_substitutes")
 }
 
 model Service {
@@ -1038,20 +1155,21 @@ model InventoryMovement {
 }
 
 model PlatformUser {
-  id                   String                @id @default(cuid())
+  id                   String                    @id @default(cuid())
   name                 String
-  email                String                @unique
+  email                String                    @unique
   passwordHash         String
-  role                 PlatformRole          @default(SUPPORT_ADMIN)
-  status               PlatformUserStatus    @default(ACTIVE)
+  role                 PlatformRole              @default(SUPPORT_ADMIN)
+  status               PlatformUserStatus        @default(ACTIVE)
   lastLoginAt          DateTime?
   sessions             PlatformSession[]
   auditLogs            PlatformAuditLog[]
   subscriptionPayments SubscriptionPayment[]
   subscriptionEvents   SubscriptionEvent[]
   subscriptionInvoices SubscriptionInvoice[]
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  paymentLinksCreated  SubscriptionPaymentLink[] @relation("SubscriptionPaymentLinkCreatedBy")
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
 
   @@index([status, role])
   @@map("platform_users")
@@ -1166,41 +1284,91 @@ model SubscriptionPayment {
 }
 
 model SubscriptionInvoice {
-  id                      String                    @id @default(cuid())
+  id                      String                      @id @default(cuid())
   companyId               String
   companySubscriptionId   String
   planId                  String
-  invoiceNumber           String                    @unique
-  status                  SubscriptionInvoiceStatus @default(PENDING)
-  currency                Currency                  @default(DOP)
-  subtotal                Decimal                   @db.Decimal(12, 2)
-  taxAmount               Decimal                   @default(0) @db.Decimal(12, 2)
-  discountAmount          Decimal                   @default(0) @db.Decimal(12, 2)
-  total                   Decimal                   @db.Decimal(12, 2)
-  amountPaid              Decimal                   @default(0) @db.Decimal(12, 2)
-  balance                 Decimal                   @db.Decimal(12, 2)
+  invoiceNumber           String                      @unique
+  status                  SubscriptionInvoiceStatus   @default(PENDING)
+  currency                Currency                    @default(DOP)
+  subtotal                Decimal                     @db.Decimal(12, 2)
+  taxAmount               Decimal                     @default(0) @db.Decimal(12, 2)
+  discountAmount          Decimal                     @default(0) @db.Decimal(12, 2)
+  total                   Decimal                     @db.Decimal(12, 2)
+  amountPaid              Decimal                     @default(0) @db.Decimal(12, 2)
+  balance                 Decimal                     @db.Decimal(12, 2)
   billingPeriodStart      DateTime
   billingPeriodEnd        DateTime
-  issueDate               DateTime                  @default(now())
+  issueDate               DateTime                    @default(now())
   dueDate                 DateTime
   paidAt                  DateTime?
   voidedAt                DateTime?
   voidReason              String?
   notes                   String?
   createdByPlatformUserId String
-  company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  subscription            CompanySubscription       @relation(fields: [companySubscriptionId], references: [id], onDelete: Restrict)
-  plan                    SaasPlan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  company                 Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  subscription            CompanySubscription         @relation(fields: [companySubscriptionId], references: [id], onDelete: Restrict)
+  plan                    SaasPlan                    @relation(fields: [planId], references: [id], onDelete: Restrict)
   payments                SubscriptionPayment[]
-  createdByPlatformUser   PlatformUser              @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
+  paymentLinks            SubscriptionPaymentLink[]
+  paymentReports          SubscriptionPaymentReport[]
+  createdByPlatformUser   PlatformUser                @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
 
   @@index([companyId, status, dueDate])
   @@index([companySubscriptionId, issueDate(sort: Desc)])
   @@index([planId, status])
   @@index([status, dueDate])
   @@map("subscription_invoices")
+}
+
+model SubscriptionPaymentLink {
+  id                      String                        @id @default(cuid())
+  companyId               String
+  subscriptionInvoiceId   String
+  token                   String                        @unique
+  status                  SubscriptionPaymentLinkStatus @default(ACTIVE)
+  amount                  Decimal                       @db.Decimal(12, 2)
+  currency                Currency                      @default(DOP)
+  expiresAt               DateTime?
+  metadataJson            Json?
+  createdByPlatformUserId String
+  company                 Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  invoice                 SubscriptionInvoice           @relation(fields: [subscriptionInvoiceId], references: [id], onDelete: Cascade)
+  createdByPlatformUser   PlatformUser                  @relation("SubscriptionPaymentLinkCreatedBy", fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
+  reports                 SubscriptionPaymentReport[]
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+
+  @@index([companyId, status, createdAt])
+  @@index([subscriptionInvoiceId, status, createdAt])
+  @@index([status, expiresAt])
+  @@map("subscription_payment_links")
+}
+
+model SubscriptionPaymentReport {
+  id                    String                          @id @default(cuid())
+  companyId             String
+  subscriptionInvoiceId String
+  paymentLinkId         String
+  status                SubscriptionPaymentReportStatus @default(REPORTED)
+  amount                Decimal                         @db.Decimal(12, 2)
+  currency              Currency                        @default(DOP)
+  payerName             String?
+  payerEmail            String?
+  reference             String?
+  notes                 String?
+  reportedAt            DateTime                        @default(now())
+  company               Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  invoice               SubscriptionInvoice             @relation(fields: [subscriptionInvoiceId], references: [id], onDelete: Cascade)
+  paymentLink           SubscriptionPaymentLink         @relation(fields: [paymentLinkId], references: [id], onDelete: Cascade)
+  createdAt             DateTime                        @default(now())
+
+  @@index([companyId, reportedAt(sort: Desc)])
+  @@index([subscriptionInvoiceId, reportedAt(sort: Desc)])
+  @@index([paymentLinkId, reportedAt(sort: Desc)])
+  @@map("subscription_payment_reports")
 }
 
 model SubscriptionInvoiceSequence {

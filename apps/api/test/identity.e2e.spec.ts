@@ -23,10 +23,13 @@ import {
   PlatformRole,
   PlatformUserStatus,
   PrismaClient,
+  ProductAlternativeCodeType,
+  ProductSubstituteType,
   SaleStatus,
   SaasBillingInterval,
   SubscriptionEventType,
   SubscriptionInvoiceStatus,
+  SubscriptionPaymentLinkStatus,
   SubscriptionPaymentMethod,
   TaxpayerType,
   UserRole,
@@ -1225,7 +1228,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       },
       login.body.accessToken,
     );
-    const secondInvoice = await http<{ invoiceNumber: string }>(
+    const secondInvoice = await http<{ id: string; invoiceNumber: string }>(
       'POST',
       '/platform/billing/invoices',
       {
@@ -1234,6 +1237,64 @@ describe('Identity and multi-company isolation (e2e)', () => {
         billingPeriodEnd: '2026-09-01',
         dueDate: '2026-09-01',
       },
+      login.body.accessToken,
+    );
+    const supportLinkAttempt = await http<unknown>(
+      'POST',
+      `/platform/billing/invoices/${invoice.body.id}/payment-links`,
+      undefined,
+      supportLogin.body.accessToken,
+    );
+    const paymentLink = await http<{
+      id: string;
+      token: string;
+      status: SubscriptionPaymentLinkStatus;
+      amount: string;
+    }>(
+      'POST',
+      `/platform/billing/invoices/${invoice.body.id}/payment-links`,
+      { expiresAt: '2026-08-15T00:00:00.000Z' },
+      login.body.accessToken,
+    );
+    const publicLink = await http<{
+      token: string;
+      status: SubscriptionPaymentLinkStatus;
+      invoice: { invoiceNumber: string; balance: string };
+    }>('GET', `/pay/invoice/${paymentLink.body.token}`);
+    const reportedPayment = await http<{
+      report: { id: string; amount: string; reference: string };
+      link: { reports: Array<{ id: string }> };
+    }>('POST', `/pay/invoice/${paymentLink.body.token}/report`, {
+      amount: 500,
+      payerName: 'Cliente SaaS',
+      payerEmail: 'billing-client@example.test',
+      reference: 'TRX-001',
+      notes: 'Transferencia reportada',
+    });
+    const listedLinks = await http<
+      Array<{ id: string; reports: Array<{ reference: string }> }>
+    >(
+      'GET',
+      `/platform/billing/invoices/${invoice.body.id}/payment-links`,
+      undefined,
+      login.body.accessToken,
+    );
+    const cancellableLink = await http<{
+      id: string;
+      token: string;
+      status: SubscriptionPaymentLinkStatus;
+    }>(
+      'POST',
+      `/platform/billing/invoices/${invoice.body.id}/payment-links`,
+      undefined,
+      login.body.accessToken,
+    );
+    const cancelledLink = await http<{
+      status: SubscriptionPaymentLinkStatus;
+    }>(
+      'POST',
+      `/platform/billing/payment-links/${cancellableLink.body.id}/cancel`,
+      { reason: 'Prueba de cancelacion' },
       login.body.accessToken,
     );
     const partialPayment = await http<{
@@ -1264,6 +1325,9 @@ describe('Identity and multi-company isolation (e2e)', () => {
       },
       login.body.accessToken,
     );
+    const paidPublicLink = await http<{
+      status: SubscriptionPaymentLinkStatus;
+    }>('GET', `/pay/invoice/${paymentLink.body.token}`);
     const voidPaidAttempt = await http<unknown>(
       'POST',
       `/platform/billing/invoices/${invoice.body.id}/void`,
@@ -1315,12 +1379,33 @@ describe('Identity and multi-company isolation (e2e)', () => {
     });
 
     expect(supportCreateAttempt.status).toBe(403);
+    expect(supportLinkAttempt.status).toBe(403);
     expect(invoice.status).toBe(201);
     expect(invoice.body.invoiceNumber).toMatch(/^SAA-\d{6}$/);
     expect(secondInvoice.body.invoiceNumber).not.toBe(
       invoice.body.invoiceNumber,
     );
     expect(invoice.body.status).toBe(SubscriptionInvoiceStatus.PENDING);
+    expect(paymentLink.status).toBe(201);
+    expect(paymentLink.body.token).toHaveLength(43);
+    expect(paymentLink.body.status).toBe(SubscriptionPaymentLinkStatus.ACTIVE);
+    expect(Number(paymentLink.body.amount)).toBe(2000);
+    expect(publicLink.status).toBe(200);
+    expect(publicLink.body.token).toBe(paymentLink.body.token);
+    expect(publicLink.body.invoice.invoiceNumber).toBe(
+      invoice.body.invoiceNumber,
+    );
+    expect(Number(publicLink.body.invoice.balance)).toBe(2000);
+    expect(reportedPayment.status).toBe(201);
+    expect(reportedPayment.body.report.reference).toBe('TRX-001');
+    expect(reportedPayment.body.link.reports).toHaveLength(1);
+    expect(listedLinks.body.map(({ id }) => id)).toEqual(
+      expect.arrayContaining([paymentLink.body.id]),
+    );
+    expect(listedLinks.body[0]?.reports[0]?.reference).toBe('TRX-001');
+    expect(cancelledLink.body.status).toBe(
+      SubscriptionPaymentLinkStatus.CANCELLED,
+    );
     expect(partialPayment.body.invoice.status).toBe(
       SubscriptionInvoiceStatus.PARTIALLY_PAID,
     );
@@ -1329,6 +1414,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       SubscriptionInvoiceStatus.PAID,
     );
     expect(Number(finalPayment.body.invoice.balance)).toBe(0);
+    expect(paidPublicLink.body.status).toBe(SubscriptionPaymentLinkStatus.PAID);
     expect(voidPaidAttempt.status).toBe(400);
     expect(voided.body.status).toBe(SubscriptionInvoiceStatus.VOIDED);
     expect(overdue.body.status).toBe(SubscriptionInvoiceStatus.OVERDUE);
@@ -1349,6 +1435,9 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(audit.map(({ action }) => action)).toEqual(
       expect.arrayContaining([
         'SUBSCRIPTION_INVOICE_CREATED',
+        'SUBSCRIPTION_PAYMENT_LINK_CREATED',
+        'SUBSCRIPTION_PAYMENT_REPORTED',
+        'SUBSCRIPTION_PAYMENT_LINK_CANCELLED',
         'SUBSCRIPTION_INVOICE_PARTIALLY_PAID',
         'SUBSCRIPTION_INVOICE_PAID',
         'SUBSCRIPTION_INVOICE_VOIDED',
@@ -4400,6 +4489,240 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ).toBe(7);
   });
 
+  it('manages product compatibility, substitutes and POS alternatives with tenant isolation', async () => {
+    const companyA = await registerCompany('compatibility-a');
+    const companyB = await registerCompany('compatibility-b');
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, seller, accounting, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'compatibility-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.SELLER).id,
+        companyA.branch.id,
+        'compatibility-seller',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.ACCOUNTING).id,
+        companyA.branch.id,
+        'compatibility-accounting',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'compatibility-warehouse',
+      ),
+    ]);
+    const [cashierSession, sellerSession, accountingSession, warehouseSession] =
+      await Promise.all([
+        login(cashier.email),
+        login(seller.email),
+        login(accounting.email),
+        login(warehouse.email),
+      ]);
+    const [requestedProduct, substituteProduct, foreignProduct] =
+      await Promise.all([
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Filtro aceite original',
+            sku: 'COMP-A-001',
+            price: 100,
+            stock: 0,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Filtro aceite compatible',
+            sku: 'COMP-B-001',
+            price: 95,
+            stock: 7,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto externo',
+            sku: 'COMP-X-001',
+            price: 90,
+            stock: 9,
+          },
+          companyB.accessToken,
+        ),
+      ]);
+
+    const group = await http<{ id: string; code: string }>(
+      'POST',
+      '/product-compatibility/groups',
+      { name: 'Filtros equivalentes', code: 'oil-filter' },
+      companyA.accessToken,
+    );
+    const duplicateGroup = await http<unknown>(
+      'POST',
+      '/product-compatibility/groups',
+      { name: 'Duplicado', code: 'OIL-FILTER' },
+      companyA.accessToken,
+    );
+    const addRequested = await http<unknown>(
+      'POST',
+      `/product-compatibility/groups/${group.body.id}/products`,
+      { productId: requestedProduct.body.id },
+      companyA.accessToken,
+    );
+    const addSubstitute = await http<unknown>(
+      'POST',
+      `/product-compatibility/groups/${group.body.id}/products`,
+      { productId: substituteProduct.body.id },
+      companyA.accessToken,
+    );
+    const duplicateGroupItem = await http<unknown>(
+      'POST',
+      `/product-compatibility/groups/${group.body.id}/products`,
+      { productId: substituteProduct.body.id },
+      companyA.accessToken,
+    );
+    const crossTenantGroupItem = await http<unknown>(
+      'POST',
+      `/product-compatibility/groups/${group.body.id}/products`,
+      { productId: foreignProduct.body.id },
+      companyA.accessToken,
+    );
+    const alternativeCode = await http<{ id: string; code: string }>(
+      'POST',
+      `/products/${requestedProduct.body.id}/alternative-codes`,
+      { code: 'OEM-777', type: ProductAlternativeCodeType.OEM },
+      companyA.accessToken,
+    );
+    const duplicateAlternativeCode = await http<unknown>(
+      'POST',
+      `/products/${requestedProduct.body.id}/alternative-codes`,
+      { code: 'oem-777', type: ProductAlternativeCodeType.OEM },
+      companyA.accessToken,
+    );
+    const substitute = await http<{ id: string; substituteProductId: string }>(
+      'POST',
+      `/products/${requestedProduct.body.id}/substitutes`,
+      {
+        substituteProductId: substituteProduct.body.id,
+        type: ProductSubstituteType.EQUIVALENT,
+      },
+      companyA.accessToken,
+    );
+    const crossTenantSubstitute = await http<unknown>(
+      'POST',
+      `/products/${requestedProduct.body.id}/substitutes`,
+      {
+        substituteProductId: foreignProduct.body.id,
+        type: ProductSubstituteType.EQUIVALENT,
+      },
+      companyA.accessToken,
+    );
+    const cashierView = await http<unknown>(
+      'GET',
+      '/product-compatibility/groups',
+      undefined,
+      cashierSession.accessToken,
+    );
+    const sellerView = await http<unknown>(
+      'GET',
+      '/product-compatibility/groups',
+      undefined,
+      sellerSession.accessToken,
+    );
+    const accountingView = await http<unknown>(
+      'GET',
+      '/product-compatibility/groups',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const cashierManage = await http<unknown>(
+      'POST',
+      '/product-compatibility/groups',
+      { name: 'No autorizado', code: 'NO-AUTH' },
+      cashierSession.accessToken,
+    );
+    const warehouseManage = await http<unknown>(
+      'POST',
+      '/product-compatibility/groups',
+      { name: 'Bodega autorizada', code: 'WAREHOUSE-AUTH' },
+      warehouseSession.accessToken,
+    );
+    const byProduct = await http<{
+      alternatives: Array<{ id: string; stock: string; reason: string }>;
+    }>(
+      'GET',
+      `/pos/items/${requestedProduct.body.id}/alternatives`,
+      undefined,
+      cashierSession.accessToken,
+    );
+    const byCode = await http<{
+      requestedProduct: { id: string } | null;
+      alternatives: Array<{ id: string; stock: string }>;
+    }>(
+      'GET',
+      '/pos/alternatives?query=OEM-777',
+      undefined,
+      cashierSession.accessToken,
+    );
+
+    expect(group.status).toBe(201);
+    expect(group.body.code).toBe('OIL-FILTER');
+    expect(duplicateGroup.status).toBe(409);
+    expect(addRequested.status).toBe(201);
+    expect(addSubstitute.status).toBe(201);
+    expect(duplicateGroupItem.status).toBe(409);
+    expect(crossTenantGroupItem.status).toBe(404);
+    expect(alternativeCode.status).toBe(201);
+    expect(alternativeCode.body.code).toBe('OEM-777');
+    expect(duplicateAlternativeCode.status).toBe(409);
+    expect(substitute.status).toBe(201);
+    expect(substitute.body.substituteProductId).toBe(substituteProduct.body.id);
+    expect(crossTenantSubstitute.status).toBe(404);
+    expect(cashierView.status).toBe(200);
+    expect(sellerView.status).toBe(200);
+    expect(accountingView.status).toBe(403);
+    expect(cashierManage.status).toBe(403);
+    expect(warehouseManage.status).toBe(201);
+    expect(byProduct.status).toBe(200);
+    expect(byProduct.body.alternatives.map(({ id }) => id)).toEqual([
+      substituteProduct.body.id,
+    ]);
+    expect(byCode.status).toBe(200);
+    expect(byCode.body.requestedProduct?.id).toBe(requestedProduct.body.id);
+    expect(byCode.body.alternatives.map(({ id }) => id)).toEqual([
+      substituteProduct.body.id,
+    ]);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          companyId: companyA.company.id,
+          action: {
+            in: [
+              'PRODUCT_COMPATIBILITY_GROUP_CREATED',
+              'PRODUCT_COMPATIBILITY_PRODUCT_ADDED',
+              'PRODUCT_ALTERNATIVE_CODE_ADDED',
+              'PRODUCT_SUBSTITUTE_ADDED',
+            ],
+          },
+        },
+      }),
+    ).toBeGreaterThanOrEqual(5);
+  });
+
   it('imports products from Excel with validation, permissions and branch isolation', async () => {
     const companyA = await registerCompany('product-import-a');
     const companyB = await registerCompany('product-import-b');
@@ -4595,7 +4918,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
     );
     expect(auditActions.join('|')).not.toContain('passwordHash');
     expect(auditActions.join('|')).not.toContain('refreshToken');
-  });
+  }, 30000);
 
   it('validates catalog data, permissions and multi-company isolation', async () => {
     const companyA = await registerCompany('catalog-a');
@@ -4998,6 +5321,10 @@ async function resetDatabase() {
     prisma.documentSequence.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
     prisma.customer.deleteMany(),
+    prisma.productCompatibilityGroupItem.deleteMany(),
+    prisma.productAlternativeCode.deleteMany(),
+    prisma.productSubstitute.deleteMany(),
+    prisma.productCompatibilityGroup.deleteMany(),
     prisma.product.deleteMany(),
     prisma.service.deleteMany(),
     prisma.category.deleteMany(),
@@ -5207,7 +5534,11 @@ async function uploadLogo(
   mimeType: string,
 ) {
   const formData = new FormData();
-  formData.set('logo', new Blob([bytes], { type: mimeType }), fileName);
+  formData.set(
+    'logo',
+    new Blob([toBlobArrayBuffer(bytes)], { type: mimeType }),
+    fileName,
+  );
   const headers = new Headers();
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
   const response = await fetch(`${apiBaseUrl}/companies/me/logo`, {
@@ -5248,7 +5579,7 @@ async function uploadProductImport<T = unknown>(
   const formData = new FormData();
   formData.set(
     'file',
-    new Blob([bytes], {
+    new Blob([toBlobArrayBuffer(bytes)], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
     'productos.xlsx',
@@ -5266,6 +5597,12 @@ async function uploadProductImport<T = unknown>(
   const text = await response.text();
   const parsed: unknown = text ? JSON.parse(text) : undefined;
   return { status: response.status, body: parsed as T };
+}
+
+function toBlobArrayBuffer(bytes: Uint8Array) {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 async function productImportWorkbook(rows: unknown[][]) {

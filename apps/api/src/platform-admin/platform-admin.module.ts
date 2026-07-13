@@ -7,7 +7,10 @@ import { PlatformAuditService } from './platform-audit.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformAuthService } from './platform-auth.service';
-import { PlatformBillingController } from './platform-billing.controller';
+import {
+  PlatformBillingController,
+  PublicSubscriptionPaymentLinkController,
+} from './platform-billing.controller';
 import { PlatformBillingService } from './platform-billing.service';
 
 @Module({
@@ -16,6 +19,7 @@ import { PlatformBillingService } from './platform-billing.service';
     PlatformAuthController,
     PlatformAdminController,
     PlatformBillingController,
+    PublicSubscriptionPaymentLinkController,
   ],
   providers: [
     PlatformAuthGuard,

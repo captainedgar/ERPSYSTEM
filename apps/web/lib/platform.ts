@@ -102,6 +102,10 @@ export type SubscriptionInvoiceStatus =
   | 'OVERDUE'
   | 'VOIDED'
   | 'CANCELLED';
+export type SubscriptionPaymentLinkStatus =
+  'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'PAID';
+export type SubscriptionPaymentReportStatus =
+  'REPORTED' | 'REVIEWED' | 'DISCARDED';
 
 export interface SaasPlan {
   id: string;
@@ -175,6 +179,64 @@ export interface SubscriptionPayment {
   paidAt: string;
   company?: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
   invoice?: Pick<SubscriptionInvoice, 'id' | 'invoiceNumber' | 'status'> | null;
+}
+
+export interface SubscriptionPaymentReport {
+  id: string;
+  status: SubscriptionPaymentReportStatus;
+  amount: string | number;
+  currency: 'DOP';
+  payerName?: string | null;
+  payerEmail?: string | null;
+  reference?: string | null;
+  notes?: string | null;
+  reportedAt: string;
+  createdAt: string;
+}
+
+export interface SubscriptionPaymentLink {
+  id: string;
+  token: string;
+  status: SubscriptionPaymentLinkStatus;
+  amount: string | number;
+  currency: 'DOP';
+  expiresAt?: string | null;
+  createdAt: string;
+  invoice: SubscriptionInvoice;
+  reports?: SubscriptionPaymentReport[];
+}
+
+export interface PublicSubscriptionPaymentLink {
+  token: string;
+  status: SubscriptionPaymentLinkStatus;
+  amount: string | number;
+  currency: 'DOP';
+  expiresAt?: string | null;
+  invoice: Pick<
+    SubscriptionInvoice,
+    | 'invoiceNumber'
+    | 'status'
+    | 'subtotal'
+    | 'taxAmount'
+    | 'discountAmount'
+    | 'total'
+    | 'amountPaid'
+    | 'balance'
+    | 'billingPeriodStart'
+    | 'billingPeriodEnd'
+    | 'issueDate'
+    | 'dueDate'
+    | 'notes'
+  > & {
+    company: { name: string; email?: string | null };
+    plan: { name: string };
+  };
+  reports: Array<
+    Pick<
+      SubscriptionPaymentReport,
+      'id' | 'status' | 'amount' | 'currency' | 'reference' | 'reportedAt'
+    >
+  >;
 }
 
 export interface SubscriptionEvent {
@@ -430,6 +492,54 @@ export function getSubscriptionInvoice(invoiceId: string) {
   );
 }
 
+export function listSubscriptionPaymentLinks(invoiceId: string) {
+  return platformRequest<SubscriptionPaymentLink[]>(
+    `/platform/billing/invoices/${invoiceId}/payment-links`,
+  );
+}
+
+export function createSubscriptionPaymentLink(
+  invoiceId: string,
+  body: { expiresAt?: string; metadata?: Record<string, unknown> } = {},
+) {
+  return platformRequest<SubscriptionPaymentLink>(
+    `/platform/billing/invoices/${invoiceId}/payment-links`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}
+
+export function cancelSubscriptionPaymentLink(id: string, reason?: string) {
+  return platformRequest<SubscriptionPaymentLink>(
+    `/platform/billing/payment-links/${id}/cancel`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+}
+
+export function getPublicSubscriptionPaymentLink(token: string) {
+  return publicPlatformRequest<PublicSubscriptionPaymentLink>(
+    `/pay/invoice/${token}`,
+  );
+}
+
+export function reportPublicSubscriptionPayment(
+  token: string,
+  body: {
+    amount: number;
+    payerName?: string;
+    payerEmail?: string;
+    reference?: string;
+    notes?: string;
+  },
+) {
+  return publicPlatformRequest<{
+    report: SubscriptionPaymentReport;
+    link: PublicSubscriptionPaymentLink;
+  }>(`/pay/invoice/${token}/report`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export function createSubscriptionInvoice(body: {
   companyId: string;
   companySubscriptionId?: string;
@@ -479,6 +589,13 @@ export function processOverdueBilling() {
   );
 }
 
+export function platformMoney(value: string | number | undefined) {
+  return new Intl.NumberFormat('es-DO', {
+    currency: 'DOP',
+    style: 'currency',
+  }).format(Number(value ?? 0));
+}
+
 async function platformRequest<T>(
   path: string,
   init: RequestInit = {},
@@ -491,6 +608,23 @@ async function platformRequest<T>(
   const token = includeAuth ? getPlatformToken() : null;
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    const message = getResponseMessage(data);
+    throw new Error(message ?? 'No se pudo completar la solicitud');
+  }
+  return data as T;
+}
+
+async function publicPlatformRequest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!headers.has('Content-Type') && init.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
   const response = await fetch(`${API_URL}${path}`, { ...init, headers });
   const data = await parseJsonSafe(response);
   if (!response.ok) {

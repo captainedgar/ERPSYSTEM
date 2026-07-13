@@ -12,14 +12,20 @@ import {
   SaasBillingInterval,
   SubscriptionEventType,
   SubscriptionInvoiceStatus,
+  SubscriptionPaymentLinkStatus,
 } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { PlatformAuditService } from './platform-audit.service';
 import {
   CreateSaasPlanDto,
+  CreateSubscriptionPaymentLinkDto,
+  CancelSubscriptionPaymentLinkDto,
   CreateSubscriptionInvoiceDto,
+  ReportSubscriptionPaymentDto,
   RegisterSubscriptionPaymentDto,
+  SubscriptionPaymentLinkQueryDto,
   UpdateSaasPlanDto,
   UpdateSaasPlanStatusDto,
   UpsertCompanySubscriptionDto,
@@ -55,6 +61,24 @@ const invoiceInclude = {
     select: { id: true, name: true, email: true, role: true },
   },
 } satisfies Prisma.SubscriptionInvoiceInclude;
+
+const paymentLinkInclude = {
+  invoice: {
+    include: {
+      company: { select: { id: true, name: true, status: true, email: true } },
+      plan: true,
+      payments: { orderBy: { paidAt: 'desc' as const } },
+    },
+  },
+  reports: { orderBy: { reportedAt: 'desc' as const } },
+  createdByPlatformUser: {
+    select: { id: true, name: true, email: true, role: true },
+  },
+} satisfies Prisma.SubscriptionPaymentLinkInclude;
+
+type PaymentLinkWithInclude = Prisma.SubscriptionPaymentLinkGetPayload<{
+  include: typeof paymentLinkInclude;
+}>;
 
 export interface BillingOverdueProcessResult {
   success: boolean;
@@ -445,6 +469,176 @@ export class PlatformBillingService {
     });
     if (!invoice) throw new NotFoundException('Factura no encontrada');
     return invoice;
+  }
+
+  listInvoicePaymentLinks(
+    user: PlatformAuthUser,
+    invoiceId: string,
+    query: SubscriptionPaymentLinkQueryDto,
+  ) {
+    this.requireBillingAdmin(user);
+    return this.prisma.subscriptionPaymentLink.findMany({
+      where: {
+        subscriptionInvoiceId: invoiceId,
+        status: query.status,
+      },
+      include: paymentLinkInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  async createInvoicePaymentLink(
+    user: PlatformAuthUser,
+    invoiceId: string,
+    dto: CreateSubscriptionPaymentLinkDto,
+    context: PlatformRequestContext,
+  ) {
+    this.requireBillingAdmin(user);
+    const invoice = await this.getInvoice(invoiceId);
+    if (
+      invoice.status === SubscriptionInvoiceStatus.PAID ||
+      invoice.status === SubscriptionInvoiceStatus.VOIDED ||
+      invoice.status === SubscriptionInvoiceStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        'La factura no admite links de pago en su estado actual',
+      );
+    }
+    if (!new Prisma.Decimal(invoice.balance).greaterThan(0)) {
+      throw new BadRequestException('La factura no tiene balance pendiente');
+    }
+
+    const link = await this.prisma.subscriptionPaymentLink.create({
+      data: {
+        companyId: invoice.companyId,
+        subscriptionInvoiceId: invoice.id,
+        token: this.paymentLinkToken(),
+        status: SubscriptionPaymentLinkStatus.ACTIVE,
+        amount: invoice.balance,
+        currency: invoice.currency,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        metadataJson: this.jsonOrUndefined(dto.metadata),
+        createdByPlatformUserId: user.platformUserId,
+      },
+      include: paymentLinkInclude,
+    });
+    await this.audit.create({
+      user,
+      action: 'SUBSCRIPTION_PAYMENT_LINK_CREATED',
+      module: 'platform_billing',
+      entityType: 'SubscriptionPaymentLink',
+      entityId: link.id,
+      description: `Link de pago creado para ${invoice.invoiceNumber}`,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        amount: invoice.balance.toString(),
+        expiresAt: link.expiresAt?.toISOString() ?? null,
+      },
+      ...context,
+    });
+    return link;
+  }
+
+  async cancelInvoicePaymentLink(
+    user: PlatformAuthUser,
+    id: string,
+    dto: CancelSubscriptionPaymentLinkDto,
+    context: PlatformRequestContext,
+  ) {
+    this.requireBillingAdmin(user);
+    const link = await this.prisma.subscriptionPaymentLink.findUnique({
+      where: { id },
+      include: paymentLinkInclude,
+    });
+    if (!link) throw new NotFoundException('Link de pago no encontrado');
+    if (link.status === SubscriptionPaymentLinkStatus.CANCELLED) return link;
+    if (link.status === SubscriptionPaymentLinkStatus.PAID) {
+      throw new BadRequestException('No se puede cancelar un link pagado');
+    }
+    const cancelled = await this.prisma.subscriptionPaymentLink.update({
+      where: { id },
+      data: {
+        status: SubscriptionPaymentLinkStatus.CANCELLED,
+        metadataJson: this.mergeMetadata(link.metadataJson, {
+          cancelledReason: dto.reason?.trim() ?? null,
+          cancelledAt: new Date().toISOString(),
+        }),
+      },
+      include: paymentLinkInclude,
+    });
+    await this.audit.create({
+      user,
+      action: 'SUBSCRIPTION_PAYMENT_LINK_CANCELLED',
+      module: 'platform_billing',
+      entityType: 'SubscriptionPaymentLink',
+      entityId: cancelled.id,
+      description: `Link de pago cancelado para ${cancelled.invoice.invoiceNumber}`,
+      metadata: { reason: dto.reason?.trim() ?? null },
+      ...context,
+    });
+    return cancelled;
+  }
+
+  async getPublicPaymentLink(token: string) {
+    const link = await this.findPaymentLinkByToken(token);
+    return this.publicPaymentLinkResponse(
+      await this.syncPaymentLinkStatus(link),
+    );
+  }
+
+  async reportPublicPayment(
+    token: string,
+    dto: ReportSubscriptionPaymentDto,
+    context: PlatformRequestContext,
+  ) {
+    const link = await this.syncPaymentLinkStatus(
+      await this.findPaymentLinkByToken(token),
+    );
+    if (link.status !== SubscriptionPaymentLinkStatus.ACTIVE) {
+      throw new BadRequestException('El link de pago no esta activo');
+    }
+    const balance = new Prisma.Decimal(link.invoice.balance);
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.greaterThan(balance)) {
+      throw new BadRequestException(
+        'El monto reportado no puede exceder el balance pendiente',
+      );
+    }
+    const report = await this.prisma.subscriptionPaymentReport.create({
+      data: {
+        companyId: link.companyId,
+        subscriptionInvoiceId: link.subscriptionInvoiceId,
+        paymentLinkId: link.id,
+        amount,
+        currency: link.currency,
+        payerName: dto.payerName?.trim(),
+        payerEmail: dto.payerEmail?.trim(),
+        reference: dto.reference?.trim(),
+        notes: dto.notes?.trim(),
+      },
+    });
+    await this.audit.create({
+      user: null,
+      action: 'SUBSCRIPTION_PAYMENT_REPORTED',
+      module: 'platform_billing',
+      entityType: 'SubscriptionPaymentReport',
+      entityId: report.id,
+      description: `Pago reportado para ${link.invoice.invoiceNumber}`,
+      metadata: {
+        paymentLinkId: link.id,
+        invoiceId: link.invoice.id,
+        invoiceNumber: link.invoice.invoiceNumber,
+        amount: amount.toString(),
+      },
+      ...context,
+    });
+    return {
+      report,
+      link: this.publicPaymentLinkResponse(
+        await this.findPaymentLinkByToken(token),
+      ),
+    };
   }
 
   listCompanyInvoices(companyId: string) {
@@ -950,6 +1144,15 @@ export class PlatformBillingService {
       },
       include: invoiceInclude,
     });
+    if (status === SubscriptionInvoiceStatus.PAID) {
+      await tx.subscriptionPaymentLink.updateMany({
+        where: {
+          subscriptionInvoiceId: invoiceId,
+          status: SubscriptionPaymentLinkStatus.ACTIVE,
+        },
+        data: { status: SubscriptionPaymentLinkStatus.PAID },
+      });
+    }
     await tx.subscriptionEvent.create({
       data: {
         companySubscriptionId: updated.companySubscriptionId,
@@ -1067,6 +1270,98 @@ export class PlatformBillingService {
         createdByPlatformUserId: user.platformUserId,
       },
     });
+  }
+
+  private async findPaymentLinkByToken(token: string) {
+    const link = await this.prisma.subscriptionPaymentLink.findUnique({
+      where: { token },
+      include: paymentLinkInclude,
+    });
+    if (!link) throw new NotFoundException('Link de pago no encontrado');
+    return link;
+  }
+
+  private async syncPaymentLinkStatus(
+    link: PaymentLinkWithInclude,
+  ): Promise<PaymentLinkWithInclude> {
+    const nextStatus = this.resolvePaymentLinkStatus(link);
+    if (nextStatus === link.status) return link;
+    return this.prisma.subscriptionPaymentLink.update({
+      where: { id: link.id },
+      data: { status: nextStatus },
+      include: paymentLinkInclude,
+    });
+  }
+
+  private resolvePaymentLinkStatus(link: PaymentLinkWithInclude) {
+    if (link.status === SubscriptionPaymentLinkStatus.CANCELLED) {
+      return link.status;
+    }
+    if (link.invoice.status === SubscriptionInvoiceStatus.PAID) {
+      return SubscriptionPaymentLinkStatus.PAID;
+    }
+    if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
+      return SubscriptionPaymentLinkStatus.EXPIRED;
+    }
+    return link.status;
+  }
+
+  private publicPaymentLinkResponse(link: PaymentLinkWithInclude) {
+    return {
+      token: link.token,
+      status: link.status,
+      amount: link.amount,
+      currency: link.currency,
+      expiresAt: link.expiresAt,
+      invoice: {
+        invoiceNumber: link.invoice.invoiceNumber,
+        status: link.invoice.status,
+        subtotal: link.invoice.subtotal,
+        taxAmount: link.invoice.taxAmount,
+        discountAmount: link.invoice.discountAmount,
+        total: link.invoice.total,
+        amountPaid: link.invoice.amountPaid,
+        balance: link.invoice.balance,
+        billingPeriodStart: link.invoice.billingPeriodStart,
+        billingPeriodEnd: link.invoice.billingPeriodEnd,
+        issueDate: link.invoice.issueDate,
+        dueDate: link.invoice.dueDate,
+        notes: link.invoice.notes,
+        company: {
+          name: link.invoice.company.name,
+          email: link.invoice.company.email,
+        },
+        plan: { name: link.invoice.plan.name },
+      },
+      reports: link.reports.map((report) => ({
+        id: report.id,
+        status: report.status,
+        amount: report.amount,
+        currency: report.currency,
+        reference: report.reference,
+        reportedAt: report.reportedAt,
+      })),
+    };
+  }
+
+  private paymentLinkToken() {
+    return randomBytes(32).toString('base64url');
+  }
+
+  private jsonOrUndefined(value: unknown) {
+    return value === undefined ? undefined : (value as Prisma.InputJsonValue);
+  }
+
+  private mergeMetadata(
+    current: Prisma.JsonValue | null,
+    patch: Prisma.InputJsonObject,
+  ) {
+    return {
+      ...(current && typeof current === 'object' && !Array.isArray(current)
+        ? current
+        : {}),
+      ...patch,
+    } satisfies Prisma.InputJsonObject;
   }
 
   private addBillingInterval(date: Date, interval: SaasBillingInterval) {

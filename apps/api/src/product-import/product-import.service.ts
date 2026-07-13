@@ -4,6 +4,7 @@ import {
   CategoryType,
   InventoryMovementType,
   Prisma,
+  ProductAlternativeCodeType,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
 
@@ -26,7 +27,11 @@ type ImportColumn =
   | 'minStock'
   | 'taxRate'
   | 'active'
-  | 'description';
+  | 'description'
+  | 'compatibilityGroup'
+  | 'equivalenceCode'
+  | 'oemCodes'
+  | 'alternativeCodes';
 
 interface ParsedRow {
   rowNumber: number;
@@ -43,6 +48,10 @@ interface ParsedRow {
   taxRate: number;
   active: boolean;
   description: string | null;
+  compatibilityGroup: string | null;
+  equivalenceCode: string | null;
+  oemCodes: string[];
+  alternativeCodes: string[];
   errors: string[];
   warnings: string[];
 }
@@ -87,6 +96,10 @@ const TEMPLATE_HEADERS = [
   'itbis',
   'activo',
   'descripcion',
+  'grupo_compatibilidad',
+  'codigo_equivalencia',
+  'codigos_oem',
+  'codigos_alternos',
 ];
 
 const HEADER_MAP = new Map<string, ImportColumn>([
@@ -111,6 +124,14 @@ const HEADER_MAP = new Map<string, ImportColumn>([
   ['activo', 'active'],
   ['descripcion', 'description'],
   ['descripción', 'description'],
+  ['grupo_compatibilidad', 'compatibilityGroup'],
+  ['grupo compatibilidad', 'compatibilityGroup'],
+  ['codigo_equivalencia', 'equivalenceCode'],
+  ['codigo equivalencia', 'equivalenceCode'],
+  ['codigos_oem', 'oemCodes'],
+  ['codigos oem', 'oemCodes'],
+  ['codigos_alternos', 'alternativeCodes'],
+  ['codigos alternos', 'alternativeCodes'],
 ]);
 
 @Injectable()
@@ -214,7 +235,11 @@ export class ProductImportService {
         preview.rows,
         createMissingRelations,
       );
-      const createdProducts: Array<{ id: string; name: string }> = [];
+      const createdProducts: Array<{
+        id: string;
+        name: string;
+        row: ParsedRow;
+      }> = [];
       let inventoryMovementsCreated = 0;
       for (const row of preview.rows) {
         const product = await tx.product.create({
@@ -237,7 +262,7 @@ export class ProductImportService {
           },
           select: { id: true, name: true },
         });
-        createdProducts.push(product);
+        createdProducts.push({ ...product, row });
         await this.audit.createWithClient(tx, {
           companyId: user.companyId,
           branchId: user.branchId,
@@ -279,6 +304,11 @@ export class ProductImportService {
           });
         }
       }
+      const compatibilityCreated = await this.importCompatibility(
+        tx,
+        user,
+        createdProducts,
+      );
       await this.audit.createWithClient(tx, {
         companyId: user.companyId,
         branchId: user.branchId,
@@ -289,13 +319,18 @@ export class ProductImportService {
         metadata: {
           productsCreated: createdProducts.length,
           inventoryMovementsCreated,
+          compatibilityCreated,
         },
       });
       return {
         productsCreated: createdProducts.length,
         rowsSkipped: 0,
         inventoryMovementsCreated,
-        createdProducts,
+        compatibilityCreated,
+        createdProducts: createdProducts.map((item) => ({
+          id: item.id,
+          name: item.name,
+        })),
       };
     });
     return { ...result, errors: [], warnings: preview.warnings };
@@ -424,6 +459,7 @@ export class ProductImportService {
     const rows: ParsedRow[] = [];
     const skuCounts = new Map<string, number>();
     const barcodeCounts = new Map<string, number>();
+    const alternativeCodeCounts = new Map<string, number>();
     for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const row = sheet.getRow(rowNumber);
       if (rowIsEmpty(row)) continue;
@@ -435,6 +471,9 @@ export class ProductImportService {
       rows.push(parsed);
       if (parsed.sku) increment(skuCounts, key(parsed.sku));
       if (parsed.barcode) increment(barcodeCounts, key(parsed.barcode));
+      for (const code of rowAlternativeCodes(parsed)) {
+        increment(alternativeCodeCounts, key(code));
+      }
     }
     for (const row of rows) {
       if (row.sku && (skuCounts.get(key(row.sku)) ?? 0) > 1) {
@@ -445,6 +484,11 @@ export class ProductImportService {
           `Código de barras duplicado en archivo: ${row.barcode}`,
         );
       }
+      for (const code of rowAlternativeCodes(row)) {
+        if ((alternativeCodeCounts.get(key(code)) ?? 0) > 1) {
+          row.errors.push(`Codigo alterno duplicado en archivo: ${code}`);
+        }
+      }
     }
     return rows;
   }
@@ -452,6 +496,9 @@ export class ProductImportService {
   private async validateDuplicates(companyId: string, rows: ParsedRow[]) {
     const skus = uniqueValues(rows.map((row) => row.sku));
     const barcodes = uniqueValues(rows.map((row) => row.barcode));
+    const alternativeCodes = unique(
+      rows.flatMap((row) => rowAlternativeCodes(row).map(key)),
+    );
     const products = await this.prisma.product.findMany({
       where: {
         companyId,
@@ -471,12 +518,25 @@ export class ProductImportService {
         product.barcode ? [key(product.barcode)] : [],
       ),
     );
+    const existingAlternativeCodes = new Set(
+      (
+        await this.prisma.productAlternativeCode.findMany({
+          where: { companyId, code: { in: alternativeCodes } },
+          select: { code: true },
+        })
+      ).map((code) => key(code.code)),
+    );
     for (const row of rows) {
       if (row.sku && existingSkus.has(key(row.sku))) {
         row.errors.push(`El SKU ${row.sku} ya existe`);
       }
       if (row.barcode && existingBarcodes.has(key(row.barcode))) {
         row.errors.push(`El código de barras ${row.barcode} ya existe`);
+      }
+      for (const code of rowAlternativeCodes(row)) {
+        if (existingAlternativeCodes.has(key(code))) {
+          row.errors.push(`El codigo alterno ${code} ya existe`);
+        }
       }
     }
   }
@@ -619,6 +679,84 @@ export class ProductImportService {
       .then((items) => new Map(items.map((item) => [key(item.name), item.id])));
   }
 
+  private async importCompatibility(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    products: Array<{ id: string; name: string; row: ParsedRow }>,
+  ) {
+    let compatibilityCreated = 0;
+    const groupIds = new Map<string, string>();
+    for (const item of products) {
+      const groupCode = item.row.compatibilityGroup
+        ? normalizeCompatibilityCode(item.row.compatibilityGroup)
+        : null;
+      if (groupCode) {
+        let groupId = groupIds.get(groupCode);
+        if (!groupId) {
+          const group = await tx.productCompatibilityGroup.upsert({
+            where: {
+              companyId_code: { companyId: user.companyId, code: groupCode },
+            },
+            create: {
+              companyId: user.companyId,
+              code: groupCode,
+              name: item.row.compatibilityGroup!,
+            },
+            update: {},
+            select: { id: true },
+          });
+          groupId = group.id;
+          groupIds.set(groupCode, groupId);
+        }
+        await tx.productCompatibilityGroupItem.create({
+          data: { companyId: user.companyId, groupId, productId: item.id },
+        });
+        compatibilityCreated += 1;
+      }
+      const codes: Array<{ code: string; type: ProductAlternativeCodeType }> =
+        [];
+      if (item.row.equivalenceCode) {
+        codes.push({
+          code: item.row.equivalenceCode,
+          type: ProductAlternativeCodeType.REPLACEMENT,
+        });
+      }
+      codes.push(
+        ...item.row.oemCodes.map((code) => ({
+          code,
+          type: ProductAlternativeCodeType.OEM,
+        })),
+        ...item.row.alternativeCodes.map((code) => ({
+          code,
+          type: ProductAlternativeCodeType.OTHER,
+        })),
+      );
+      for (const code of codes) {
+        await tx.productAlternativeCode.create({
+          data: {
+            companyId: user.companyId,
+            productId: item.id,
+            code: normalizeCompatibilityCode(code.code),
+            type: code.type,
+          },
+        });
+        compatibilityCreated += 1;
+      }
+    }
+    if (compatibilityCreated > 0) {
+      await this.audit.createWithClient(tx, {
+        companyId: user.companyId,
+        branchId: user.branchId,
+        userId: user.userId,
+        action: 'PRODUCT_COMPATIBILITY_IMPORTED',
+        module: 'product_compatibility',
+        description: 'Product compatibility data imported from Excel',
+        metadata: { compatibilityCreated },
+      });
+    }
+    return compatibilityCreated;
+  }
+
   private publicPreview(preview: ImportPreview) {
     return {
       totalRows: preview.totalRows,
@@ -688,6 +826,10 @@ function parseProductRow(
     taxRate: taxRate ?? 18,
     active: booleanValue(values.get('active')),
     description: optional(values.get('description')),
+    compatibilityGroup: optional(values.get('compatibilityGroup')),
+    equivalenceCode: optional(values.get('equivalenceCode')),
+    oemCodes: listValue(values.get('oemCodes')),
+    alternativeCodes: listValue(values.get('alternativeCodes')),
     errors,
     warnings: [],
   };
@@ -739,6 +881,15 @@ function optional(value: string | undefined) {
   return next ? next : null;
 }
 
+function listValue(value: string | undefined) {
+  return unique(
+    text(value)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+}
+
 function numberValue(value: string | undefined, fallback?: number) {
   const raw = text(value).replace(',', '.');
   if (!raw && fallback !== undefined) return fallback;
@@ -779,6 +930,12 @@ function uniqueValues(values: Array<string | null>) {
   return unique(values.filter((value): value is string => Boolean(value)));
 }
 
+function rowAlternativeCodes(row: ParsedRow) {
+  return [row.equivalenceCode, ...row.oemCodes, ...row.alternativeCodes].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
 function missingNames(
   values: Array<string | null>,
   existing: Map<string, string>,
@@ -806,4 +963,8 @@ function unitCode(name: string, usedCodes: Set<string>) {
   }
   usedCodes.add(code);
   return code;
+}
+
+function normalizeCompatibilityCode(value: string) {
+  return value.trim().toUpperCase();
 }
