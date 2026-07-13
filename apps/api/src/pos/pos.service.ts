@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CatalogStatus, Prisma } from '@prisma/client';
 
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { BranchInventoryService } from '../inventory/branch-inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosSearchQueryDto } from './dto/pos-search-query.dto';
 import {
@@ -77,7 +78,10 @@ export interface CartCalculation {
 
 @Injectable()
 export class PosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly branchInventory: BranchInventoryService,
+  ) {}
 
   async searchItems(user: AuthUser, query: PosSearchQueryDto) {
     const page = query.page ?? 1;
@@ -152,8 +156,17 @@ export class PosService {
         : Promise.resolve(0),
     ]);
 
+    const stockMap = await this.branchInventory.stockMap(
+      this.prisma,
+      user.companyId,
+      user.branchId,
+      products.map(({ id }) => id),
+    );
+
     const combined = [
-      ...products.map((product) => this.productResult(product)),
+      ...products.map((product) =>
+        this.productResult(product, stockMap.get(product.id)?.quantity),
+      ),
       ...services.map((service) => this.serviceResult(service)),
     ].sort((left, right) => {
       const leftExactBarcode =
@@ -188,6 +201,7 @@ export class PosService {
     const calculation = await this.calculateCart(
       this.prisma,
       user.companyId,
+      user.branchId,
       dto,
     );
     return this.publicCalculation(calculation);
@@ -196,6 +210,7 @@ export class PosService {
   async calculateCart(
     client: Prisma.TransactionClient | PrismaService,
     companyId: string,
+    branchId: string | null,
     dto: ValidateCartDto,
   ): Promise<CartCalculation> {
     const productIds = this.uniqueIds(dto.items, PosItemType.PRODUCT);
@@ -242,6 +257,12 @@ export class PosService {
     ]);
 
     const productMap = new Map(products.map((item) => [item.id, item]));
+    const stockMap = await this.branchInventory.stockMap(
+      client,
+      companyId,
+      branchId,
+      productIds,
+    );
     const serviceMap = new Map(services.map((item) => [item.id, item]));
     const errors: CartError[] = [];
     const warnings: CartError[] = [];
@@ -362,13 +383,15 @@ export class PosService {
     if (!settings.allowNegativeStock) {
       for (const [productId, quantity] of requestedProductQuantities) {
         const product = productMap.get(productId);
+        const branchStock = stockMap.get(productId);
+        const available = branchStock?.quantity ?? new Prisma.Decimal(0);
         if (
           product?.trackInventory &&
-          quantity.greaterThan(new Prisma.Decimal(product.stock))
+          quantity.greaterThan(new Prisma.Decimal(available))
         ) {
           errors.push({
             code: 'INSUFFICIENT_STOCK',
-            message: `Stock insuficiente para ${product.name}. Disponible: ${product.stock.toString()}.`,
+            message: `Stock insuficiente para ${product.name}. Disponible: ${available.toString()}.`,
             itemId: product.id,
           });
         }
@@ -378,12 +401,13 @@ export class PosService {
     const inventory = [...requestedProductQuantities]
       .map(([productId, quantity]) => {
         const product = productMap.get(productId);
+        const branchStock = stockMap.get(productId);
         if (!product) return null;
         return {
           productId,
           name: product.name,
           quantity: quantity.toNumber(),
-          currentStock: Number(product.stock),
+          currentStock: Number(branchStock?.quantity ?? 0),
           unitCost: Number(product.cost),
           trackInventory: product.trackInventory,
         };
@@ -429,7 +453,10 @@ export class PosService {
     ];
   }
 
-  private productResult(product: PosProduct) {
+  private productResult(
+    product: PosProduct,
+    branchQuantity: Prisma.Decimal | number | string | undefined,
+  ) {
     return {
       id: product.id,
       type: PosItemType.PRODUCT,
@@ -439,7 +466,7 @@ export class PosService {
       barcode: product.barcode,
       price: product.price,
       taxRate: product.taxRate,
-      stock: product.stock,
+      stock: branchQuantity ?? new Prisma.Decimal(0),
       trackInventory: product.trackInventory,
       allowDiscount: product.allowDiscount,
       status: product.status,

@@ -75,14 +75,40 @@ export class ProductsService {
   async create(user: AuthUser, dto: CreateProductDto) {
     await this.validateRelations(user.companyId, dto);
     try {
-      const product = await this.prisma.product.create({
-        data: {
-          companyId: user.companyId,
-          ...this.data(dto),
-          name: dto.name.trim(),
-          price: dto.price,
-        },
-        include: productInclude,
+      const product = await this.prisma.$transaction(async (tx) => {
+        const product = await tx.product.create({
+          data: {
+            companyId: user.companyId,
+            ...this.data(dto),
+            name: dto.name.trim(),
+            price: dto.price,
+          },
+          include: productInclude,
+        });
+        const branchId =
+          user.branchId ??
+          (
+            await tx.branch.findFirst({
+              where: {
+                companyId: user.companyId,
+                isMain: true,
+                deletedAt: null,
+              },
+              select: { id: true },
+            })
+          )?.id;
+        if (branchId) {
+          await tx.productBranchStock.create({
+            data: {
+              companyId: user.companyId,
+              branchId,
+              productId: product.id,
+              quantity: dto.stock ?? 0,
+              minStock: dto.minStock ?? 0,
+            },
+          });
+        }
+        return product;
       });
       await this.auditEvent(user, product.id, 'PRODUCT_CREATED');
       return product;
@@ -100,6 +126,31 @@ export class ProductsService {
         data: this.data(dto),
         include: productInclude,
       });
+      if (
+        user.branchId &&
+        (dto.stock !== undefined || dto.minStock !== undefined)
+      ) {
+        await this.prisma.productBranchStock.upsert({
+          where: {
+            companyId_branchId_productId: {
+              companyId: user.companyId,
+              branchId: user.branchId,
+              productId: product.id,
+            },
+          },
+          update: {
+            quantity: dto.stock,
+            minStock: dto.minStock,
+          },
+          create: {
+            companyId: user.companyId,
+            branchId: user.branchId,
+            productId: product.id,
+            quantity: dto.stock ?? product.stock,
+            minStock: dto.minStock ?? product.minStock,
+          },
+        });
+      }
       await this.auditEvent(user, product.id, 'PRODUCT_UPDATED');
       return product;
     } catch (error) {

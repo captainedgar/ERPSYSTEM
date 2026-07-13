@@ -200,6 +200,12 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                 Ver bajo stock
               </Link>
             )}
+            <Link
+              className="text-blue-600 hover:text-blue-700"
+              href="/inventory/transfers"
+            >
+              Transferencias
+            </Link>
           </div>
         </header>
 
@@ -360,6 +366,12 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
               {items.map((product) => {
                 const isLowStock =
                   Number(product.stock) <= Number(product.minStock);
+                const statusLabel =
+                  product.stockStatus === 'OUT_OF_STOCK'
+                    ? 'Sin stock'
+                    : product.stockStatus === 'LOW_STOCK' || isLowStock
+                      ? 'Bajo stock'
+                      : 'Disponible';
                 return (
                   <article
                     className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
@@ -369,9 +381,9 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold">{product.name}</h3>
-                          {isLowStock && (
-                            <span className="rounded-full bg-amber-950 px-2 py-1 text-xs text-amber-300">
-                              Bajo stock
+                          {(isLowStock || product.stockStatus) && (
+                            <span className="rounded-full bg-slate-900 px-2 py-1 text-xs text-white">
+                              {statusLabel}
                             </span>
                           )}
                         </div>

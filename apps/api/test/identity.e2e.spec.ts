@@ -575,6 +575,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
       { name: 'Producto por sucursal', price: 100, stock: 3 },
       registered.accessToken,
     );
+    await http<unknown>(
+      'POST',
+      `/inventory/products/${product.body.id}/manual-entry`,
+      { quantity: 3, reason: 'Stock inicial sucursal La Vega' },
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
     const opened = await http<{ id: string; branchId: string }>(
       'POST',
       '/cash/open',
@@ -2309,9 +2316,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       },
       registered.accessToken,
     );
-    const storedProduct = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const storedProductStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
     const movementCountAfter = await prisma.inventoryMovement.count({
       where: { companyId: registered.company.id },
     });
@@ -2341,7 +2350,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         }),
       ]),
     );
-    expect(Number(storedProduct.stock)).toBe(5);
+    expect(storedProductStock).toBe(5);
     expect(movementCountAfter).toBe(movementCountBefore);
   });
 
@@ -2478,9 +2487,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       product.body.id,
       1,
     );
-    const storedProduct = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const storedProductStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
 
     expect(invalid.status).toBe(201);
     expect(invalid.body.valid).toBe(false);
@@ -2505,7 +2516,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(sellerValidation.body.valid).toBe(true);
     expect(warehouseSearch.status).toBe(403);
     expect(warehouseValidation.status).toBe(403);
-    expect(Number(storedProduct.stock)).toBe(1);
+    expect(storedProductStock).toBe(1);
   });
 
   it('creates an internal sale with mixed payments and deducts only product inventory', async () => {
@@ -2596,9 +2607,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       registered.accessToken,
     );
-    const storedProduct = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const storedProductStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
     const movements = await prisma.inventoryMovement.findMany({
       where: { referenceId: created.body.id },
     });
@@ -2629,11 +2642,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(listed.body.items[0]?.id).toBe(created.body.id);
     expect(detail.status).toBe(200);
     expect(detail.body.notes).toBe('Venta mixta de prueba');
-    expect(Number(storedProduct.stock)).toBe(3);
+    expect(storedProductStock).toBe(3);
     expect(movements).toHaveLength(1);
     expect(movements[0]?.type).toBe(InventoryMovementType.SALE_OUT);
     expect(auditActions).toEqual(
-      expect.arrayContaining(['SALE_CREATED', 'SALE_STOCK_DEDUCTED']),
+      expect.arrayContaining(['SALE_CREATED', 'SALE_STOCK_DEDUCTED_BY_BRANCH']),
     );
   });
 
@@ -2664,9 +2677,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       payload,
       registered.accessToken,
     );
-    const afterBlocked = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const afterBlockedStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
     await http<SettingsResponse>(
       'PATCH',
       '/business-settings',
@@ -2679,9 +2694,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       payload,
       registered.accessToken,
     );
-    const afterSale = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const afterSaleStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
     const roles = await getRoles(registered.accessToken);
     const cashier = await createUser(
       registered.accessToken,
@@ -2711,9 +2728,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       { reason: 'Segundo intento' },
       registered.accessToken,
     );
-    const restoredProduct = await prisma.product.findUniqueOrThrow({
-      where: { id: product.body.id },
-    });
+    const restoredProductStock = await branchStock(
+      registered.company.id,
+      registered.branch.id,
+      product.body.id,
+    );
     const movementTypes = (
       await prisma.inventoryMovement.findMany({
         where: { referenceId: created.body.id },
@@ -2728,15 +2747,15 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ).map(({ action }) => action);
 
     expect(blocked.status).toBe(400);
-    expect(Number(afterBlocked.stock)).toBe(1);
+    expect(afterBlockedStock).toBe(1);
     expect(created.status).toBe(201);
-    expect(Number(afterSale.stock)).toBe(-1);
+    expect(afterSaleStock).toBe(-1);
     expect(forbidden.status).toBe(403);
     expect(cancelled.status).toBe(201);
     expect(cancelled.body.status).toBe(SaleStatus.CANCELLED);
     expect(cancelled.body.cancelReason).toBe('Error en la operación');
     expect(repeated.status).toBe(400);
-    expect(Number(restoredProduct.stock)).toBe(1);
+    expect(restoredProductStock).toBe(1);
     expect(movementTypes).toEqual([
       InventoryMovementType.SALE_OUT,
       InventoryMovementType.VOID_SALE_IN,
@@ -2958,6 +2977,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
       }),
       openCash(companyB.accessToken, companyB.branch.id, 30),
     ]);
+    await http<unknown>(
+      'POST',
+      `/inventory/products/${branchProduct.body.id}/manual-entry`,
+      { quantity: 10, reason: 'Stock inicial para reporte por sucursal' },
+      companyA.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
     const salePayloadWithCustomer = {
       ...salePayload(PosItemType.PRODUCT, mainProduct.body.id, 2, 200),
       customerId: customer.body.id,
@@ -3213,9 +3239,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       salePayload(PosItemType.SERVICE, serviceB.body.id, 1, 30),
       companyB.accessToken,
     );
-    const productAfterSale = await prisma.product.findUniqueOrThrow({
-      where: { id: productA.body.id },
-    });
+    const productAfterSaleStock = await branchStock(
+      companyA.company.id,
+      companyA.branch.id,
+      productA.body.id,
+    );
     const inventoryMovementsAfterSale = await prisma.inventoryMovement.count({
       where: { companyId: companyA.company.id },
     });
@@ -3335,9 +3363,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     const saleAfterVoid = await prisma.sale.findUniqueOrThrow({
       where: { id: saleA.body.id },
     });
-    const productAfterVoid = await prisma.product.findUniqueOrThrow({
-      where: { id: productA.body.id },
-    });
+    const productAfterVoidStock = await branchStock(
+      companyA.company.id,
+      companyA.branch.id,
+      productA.body.id,
+    );
     const inventoryMovementsAfterVoid = await prisma.inventoryMovement.count({
       where: { companyId: companyA.company.id },
     });
@@ -3411,8 +3441,8 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(repeatedVoid.status).toBe(400);
     expect(saleA.body.status).toBe(SaleStatus.COMPLETED);
     expect(saleAfterVoid.status).toBe(SaleStatus.COMPLETED);
-    expect(Number(productAfterSale.stock)).toBe(3);
-    expect(Number(productAfterVoid.stock)).toBe(3);
+    expect(productAfterSaleStock).toBe(3);
+    expect(productAfterVoidStock).toBe(3);
     expect(inventoryMovementsAfterVoid).toBe(inventoryMovementsAfterSale);
     expect(Number(cashSessionAfterVoid.expectedCashAmount)).toBe(
       Number(cashSessionAfterSale.expectedCashAmount),
@@ -3745,9 +3775,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       { documentType: InternalDocumentType.RECEIPT },
       companyB.accessToken,
     );
-    const productAfterSale = await prisma.product.findUniqueOrThrow({
-      where: { id: productA.body.id },
-    });
+    const productAfterSaleStock = await branchStock(
+      companyA.company.id,
+      companyA.branch.id,
+      productA.body.id,
+    );
     const inventoryAfterSale = await prisma.inventoryMovement.count({
       where: { companyId: companyA.company.id },
     });
@@ -3956,9 +3988,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     const saleAfterFiscal = await prisma.sale.findUniqueOrThrow({
       where: { id: saleA.body.id },
     });
-    const productAfterFiscal = await prisma.product.findUniqueOrThrow({
-      where: { id: productA.body.id },
-    });
+    const productAfterFiscalStock = await branchStock(
+      companyA.company.id,
+      companyA.branch.id,
+      productA.body.id,
+    );
     const inventoryAfterFiscal = await prisma.inventoryMovement.count({
       where: { companyId: companyA.company.id },
     });
@@ -4036,8 +4070,8 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(warehouseList.status).toBe(403);
     expect(warehouseSend.status).toBe(403);
     expect(saleAfterFiscal.status).toBe(SaleStatus.COMPLETED);
-    expect(Number(productAfterSale.stock)).toBe(8);
-    expect(Number(productAfterFiscal.stock)).toBe(8);
+    expect(productAfterSaleStock).toBe(8);
+    expect(productAfterFiscalStock).toBe(8);
     expect(inventoryAfterFiscal).toBe(inventoryAfterSale);
     expect(cashMovementsAfterFiscal).toBe(cashMovementsAfterSale);
     expect(auditActions).toEqual(
@@ -4906,6 +4940,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(importedProducts[0]?.brand?.name).toBe('Marca importada');
     expect(importedProducts[0]?.unit?.name).toBe('Unidad importada');
     expect(Number(importedProducts[0]?.stock)).toBe(8);
+    expect(
+      await branchStock(
+        companyA.company.id,
+        branch.body.id,
+        importedProducts[0]!.id,
+      ),
+    ).toBe(8);
     expect(foreignProducts).toBe(0);
     expect(initialMovement?.branchId).toBe(branch.body.id);
     expect(initialMovement?.type).toBe(InventoryMovementType.MANUAL_ENTRY);
@@ -4914,11 +4955,163 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(auditActions.join('|')).toContain('PRODUCT_IMPORT_COMPLETED');
     expect(auditActions.join('|')).toContain('PRODUCT_CREATED_FROM_IMPORT');
     expect(auditActions.join('|')).toContain(
-      'INVENTORY_INITIAL_STOCK_IMPORTED',
+      'PRODUCT_IMPORT_INITIAL_STOCK_BY_BRANCH',
     );
     expect(auditActions.join('|')).not.toContain('passwordHash');
     expect(auditActions.join('|')).not.toContain('refreshToken');
   }, 30000);
+
+  it('keeps real inventory separated by branch and transfers stock safely', async () => {
+    const registered = await registerCompany('branch-inventory');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      registered.accessToken,
+    );
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Santiago', code: 'STGO' },
+      registered.accessToken,
+    );
+    const product = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto multi sucursal',
+        sku: 'MS-001',
+        price: 50,
+        taxRate: 0,
+        stock: 10,
+        minStock: 5,
+        trackInventory: true,
+      },
+      registered.accessToken,
+    );
+    const beforeBranchInventory = await http<{
+      items: Array<{ id: string; stock: string; minStock: string }>;
+    }>('GET', '/inventory', undefined, registered.accessToken, {
+      'X-Branch-Id': branch.body.id,
+    });
+    const transfer = await http<{ id: string }>(
+      'POST',
+      '/inventory/transfers',
+      {
+        fromBranchId: registered.branch.id,
+        toBranchId: branch.body.id,
+        productId: product.body.id,
+        quantity: 4,
+        note: 'Reposicion Santiago',
+      },
+      registered.accessToken,
+    );
+    const excessiveTransfer = await http<unknown>(
+      'POST',
+      '/inventory/transfers',
+      {
+        fromBranchId: registered.branch.id,
+        toBranchId: branch.body.id,
+        productId: product.body.id,
+        quantity: 100,
+      },
+      registered.accessToken,
+    );
+    const roles = await getRoles(registered.accessToken);
+    const cashier = await createUser(
+      registered.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      registered.branch.id,
+      'branch-inventory-cashier',
+    );
+    const cashierSession = await login(cashier.email);
+    const cashierTransfer = await http<unknown>(
+      'POST',
+      '/inventory/transfers',
+      {
+        fromBranchId: registered.branch.id,
+        toBranchId: branch.body.id,
+        productId: product.body.id,
+        quantity: 1,
+      },
+      cashierSession.accessToken,
+    );
+    const branchSale = await http<{ id: string }>(
+      'POST',
+      '/sales',
+      salePayload(PosItemType.PRODUCT, product.body.id, 2, 100),
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const stockByBranch = await http<{
+      items: Array<{
+        branch: { id: string };
+        quantity: string;
+        minStock: string;
+      }>;
+    }>(
+      'GET',
+      `/inventory/products/${product.body.id}/stock-by-branch`,
+      undefined,
+      registered.accessToken,
+    );
+    const lowStock = await http<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/inventory/low-stock',
+      undefined,
+      registered.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const movements = await prisma.inventoryMovement.findMany({
+      where: { referenceId: transfer.body.id },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    expect(branch.status).toBe(201);
+    expect(product.status).toBe(201);
+    expect(beforeBranchInventory.status).toBe(200);
+    expect(
+      Number(
+        beforeBranchInventory.body.items.find(
+          ({ id }) => id === product.body.id,
+        )?.stock,
+      ),
+    ).toBe(0);
+    expect(transfer.status).toBe(201);
+    expect(excessiveTransfer.status).toBe(400);
+    expect(cashierTransfer.status).toBe(403);
+    expect(branchSale.status).toBe(201);
+    expect(
+      await branchStock(
+        registered.company.id,
+        registered.branch.id,
+        product.body.id,
+      ),
+    ).toBe(6);
+    expect(
+      await branchStock(registered.company.id, branch.body.id, product.body.id),
+    ).toBe(2);
+    expect(
+      stockByBranch.body.items
+        .map((item) => [item.branch.id, Number(item.quantity)])
+        .sort(),
+    ).toEqual(
+      [
+        [branch.body.id, 2],
+        [registered.branch.id, 6],
+      ].sort(),
+    );
+    expect(lowStock.body.items.map(({ id }) => id)).toContain(product.body.id);
+    expect(movements.map(({ type, branchId }) => ({ type, branchId }))).toEqual(
+      [
+        {
+          type: InventoryMovementType.ADJUSTMENT_OUT,
+          branchId: registered.branch.id,
+        },
+        { type: InventoryMovementType.ADJUSTMENT_IN, branchId: branch.body.id },
+      ],
+    );
+  });
 
   it('validates catalog data, permissions and multi-company isolation', async () => {
     const companyA = await registerCompany('catalog-a');
@@ -5320,11 +5513,14 @@ async function resetDatabase() {
     prisma.cashSession.deleteMany(),
     prisma.documentSequence.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
+    prisma.inventoryTransferItem.deleteMany(),
+    prisma.inventoryTransfer.deleteMany(),
     prisma.customer.deleteMany(),
     prisma.productCompatibilityGroupItem.deleteMany(),
     prisma.productAlternativeCode.deleteMany(),
     prisma.productSubstitute.deleteMany(),
     prisma.productCompatibilityGroup.deleteMany(),
+    prisma.productBranchStock.deleteMany(),
     prisma.product.deleteMany(),
     prisma.service.deleteMany(),
     prisma.category.deleteMany(),
@@ -5482,6 +5678,17 @@ async function createUser(
   expect(response.status).toBe(201);
   expectNoSensitiveFields(response.body);
   return response.body;
+}
+
+async function branchStock(
+  companyId: string,
+  branchId: string,
+  productId: string,
+) {
+  const stock = await prisma.productBranchStock.findUniqueOrThrow({
+    where: { companyId_branchId_productId: { companyId, branchId, productId } },
+  });
+  return Number(stock.quantity);
 }
 
 function userPayload(roleId: string, branchId: string, label: string) {

@@ -7,7 +7,9 @@ import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import {
+  getProductStockByBranch,
   getInventoryMovements,
+  type BranchStockItem,
   type InventoryMovementsResponse,
 } from '@/lib/inventory';
 
@@ -17,6 +19,7 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
   const [response, setResponse] = useState<InventoryMovementsResponse | null>(
     null,
   );
+  const [branchStock, setBranchStock] = useState<BranchStockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -38,7 +41,12 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
       const params = new URLSearchParams();
       params.set('page', '1');
       params.set('limit', '50');
-      setResponse(await getInventoryMovements(productId, params));
+      const [movements, stock] = await Promise.all([
+        getInventoryMovements(productId, params),
+        getProductStockByBranch(productId),
+      ]);
+      setResponse(movements);
+      setBranchStock(stock.items);
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -132,6 +140,24 @@ export function InventoryMovementsPage({ productId }: { productId: string }) {
             <p>{error}</p>
           </div>
         )}
+
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
+          <h2 className="text-lg font-semibold">Stock por sucursal</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {branchStock.map((item) => (
+              <div
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                key={item.branch.id}
+              >
+                <p className="font-semibold">{item.branch.name}</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Disponible {Number(item.quantity)} · mínimo{' '}
+                  {Number(item.minStock)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
           {!response.items.length && (

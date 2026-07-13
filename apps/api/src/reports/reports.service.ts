@@ -268,6 +268,41 @@ export class ReportsService {
   }
 
   async lowStock(user: AuthUser) {
+    if (user.branchId) {
+      const items = await this.prisma.productBranchStock.findMany({
+        where: {
+          companyId: user.companyId,
+          branchId: user.branchId,
+          product: {
+            deletedAt: null,
+            trackInventory: true,
+            status: 'ACTIVE',
+          },
+          quantity: { lte: this.prisma.productBranchStock.fields.minStock },
+        },
+        orderBy: [{ quantity: 'asc' }],
+        take: 100,
+        include: {
+          product: {
+            select: { id: true, name: true, sku: true, status: true },
+          },
+          branch: { select: { id: true, name: true, code: true } },
+        },
+      });
+      return {
+        items: items.map((item) => ({
+          productId: item.productId,
+          name: item.product.name,
+          sku: item.product.sku,
+          currentStock: Number(item.quantity),
+          minStock: Number(item.minStock),
+          status: item.product.status,
+          branch: item.branch,
+        })),
+        scope: 'branch_inventory',
+      };
+    }
+
     const items = await this.prisma.product.findMany({
       where: {
         companyId: user.companyId,
@@ -447,6 +482,20 @@ export class ReportsService {
   }
 
   private async lowStockCount(user: AuthUser) {
+    if (user.branchId) {
+      return this.prisma.productBranchStock.count({
+        where: {
+          companyId: user.companyId,
+          branchId: user.branchId,
+          product: {
+            deletedAt: null,
+            trackInventory: true,
+            status: 'ACTIVE',
+          },
+          quantity: { lte: this.prisma.productBranchStock.fields.minStock },
+        },
+      });
+    }
     return this.prisma.product.count({
       where: {
         companyId: user.companyId,

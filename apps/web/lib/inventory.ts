@@ -10,6 +10,8 @@ export interface InventoryProduct {
   barcode: string | null;
   stock: string | number;
   minStock: string | number;
+  activeBranchId?: string | null;
+  stockStatus?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK';
   trackInventory: boolean;
   status: CatalogStatus;
   category: { id: string; name: string; type: string } | null;
@@ -51,6 +53,34 @@ export interface InventoryMovementsResponse {
   limit: number;
 }
 
+export interface BranchStockItem {
+  branch: {
+    id: string;
+    name: string;
+    code: string;
+    isMain: boolean;
+    status: string;
+  };
+  quantity: string | number;
+  minStock: string | number;
+  status: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+}
+
+export interface InventoryTransfer {
+  id: string;
+  status: 'COMPLETED' | 'CANCELLED';
+  note: string | null;
+  createdAt: string;
+  fromBranch: { id: string; name: string; code: string };
+  toBranch: { id: string; name: string; code: string };
+  items: Array<{
+    id: string;
+    quantity: string | number;
+    product: { id: string; name: string; sku: string | null };
+  }>;
+  createdBy: { id: string; name: string; email: string } | null;
+}
+
 export function getInventory(params: URLSearchParams) {
   const query = params.toString();
   return apiRequest<InventoryListResponse>(
@@ -73,6 +103,30 @@ export function getInventoryMovements(
   return apiRequest<InventoryMovementsResponse>(
     `/inventory/products/${productId}/movements${query ? `?${query}` : ''}`,
   );
+}
+
+export function getProductStockByBranch(productId: string) {
+  return apiRequest<{
+    product: { id: string; name: string };
+    items: BranchStockItem[];
+  }>(`/inventory/products/${productId}/stock-by-branch`);
+}
+
+export function listInventoryTransfers() {
+  return apiRequest<InventoryTransfer[]>('/inventory/transfers');
+}
+
+export function createInventoryTransfer(payload: {
+  fromBranchId: string;
+  toBranchId: string;
+  productId: string;
+  quantity: number;
+  note?: string;
+}) {
+  return apiRequest<InventoryTransfer>('/inventory/transfers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createManualEntry(

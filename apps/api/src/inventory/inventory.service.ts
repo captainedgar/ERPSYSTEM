@@ -9,9 +9,11 @@ import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdjustInventoryDto } from './dto/adjust-inventory.dto';
+import { CreateInventoryTransferDto } from './dto/create-inventory-transfer.dto';
 import { InventoryMovementsQueryDto } from './dto/inventory-movements-query.dto';
 import { InventoryQueryDto } from './dto/inventory-query.dto';
 import { ManualEntryDto } from './dto/manual-entry.dto';
+import { BranchInventoryService } from './branch-inventory.service';
 
 const productInventoryInclude = {
   category: { select: { id: true, name: true, type: true } },
@@ -24,6 +26,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly branchInventory: BranchInventoryService,
   ) {}
 
   async findAll(user: AuthUser, query: InventoryQueryDto) {
@@ -43,7 +46,8 @@ export class InventoryService {
       this.prisma.product.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    const hydrated = await this.withActiveBranchStock(user, items);
+    return { items: hydrated, total, page, limit };
   }
 
   async findLowStock(user: AuthUser, query: InventoryQueryDto) {
@@ -54,7 +58,8 @@ export class InventoryService {
       orderBy: [{ name: 'asc' }],
     });
 
-    const filtered = items.filter(
+    const hydrated = await this.withActiveBranchStock(user, items);
+    const filtered = hydrated.filter(
       (product) => Number(product.stock) <= Number(product.minStock),
     );
 
@@ -74,7 +79,20 @@ export class InventoryService {
     const product = await this.findTrackedProduct(user, productId);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = { companyId: user.companyId, productId };
+    const where = {
+      companyId: user.companyId,
+      productId,
+      branchId: user.branchId ?? undefined,
+    };
+    const stock = user.branchId
+      ? await this.branchInventory.ensureStock(
+          this.prisma,
+          user.companyId,
+          user.branchId,
+          productId,
+          { quantity: product.stock, minStock: product.minStock },
+        )
+      : null;
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.inventoryMovement.findMany({
@@ -95,8 +113,8 @@ export class InventoryService {
       product: {
         id: product.id,
         name: product.name,
-        stock: product.stock,
-        minStock: product.minStock,
+        stock: stock?.quantity ?? product.stock,
+        minStock: stock?.minStock ?? product.minStock,
         unit: product.unit,
       },
       items,
@@ -161,6 +179,217 @@ export class InventoryService {
     });
 
     return { product, movement };
+  }
+
+  async stockByBranch(user: AuthUser, productId: string) {
+    const product = await this.findTrackedProduct(user, productId);
+    const branches = await this.prisma.branch.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+      select: { id: true, name: true, code: true, isMain: true, status: true },
+    });
+    const stocks = await this.prisma.productBranchStock.findMany({
+      where: { companyId: user.companyId, productId },
+    });
+    const byBranch = new Map(stocks.map((stock) => [stock.branchId, stock]));
+    return {
+      product: { id: product.id, name: product.name },
+      items: branches.map((branch) => {
+        const stock = byBranch.get(branch.id);
+        return {
+          branch,
+          quantity: stock?.quantity ?? new Prisma.Decimal(0),
+          minStock: stock?.minStock ?? product.minStock,
+          status: this.stockStatus(
+            stock?.quantity ?? new Prisma.Decimal(0),
+            stock?.minStock ?? product.minStock,
+          ),
+        };
+      }),
+    };
+  }
+
+  async createTransfer(user: AuthUser, dto: CreateInventoryTransferDto) {
+    if (dto.fromBranchId === dto.toBranchId) {
+      throw new BadRequestException(
+        'La sucursal origen y destino deben ser diferentes',
+      );
+    }
+    const quantity = new Prisma.Decimal(dto.quantity);
+    const note = dto.note?.trim() || 'Transferencia entre sucursales';
+
+    const transferId = await this.prisma.$transaction(async (tx) => {
+      const [fromBranch, toBranch, product] = await Promise.all([
+        tx.branch.findFirst({
+          where: {
+            id: dto.fromBranchId,
+            companyId: user.companyId,
+            deletedAt: null,
+          },
+          select: { id: true, name: true },
+        }),
+        tx.branch.findFirst({
+          where: {
+            id: dto.toBranchId,
+            companyId: user.companyId,
+            deletedAt: null,
+          },
+          select: { id: true, name: true },
+        }),
+        tx.product.findFirst({
+          where: {
+            id: dto.productId,
+            companyId: user.companyId,
+            deletedAt: null,
+            trackInventory: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            cost: true,
+            stock: true,
+            minStock: true,
+          },
+        }),
+      ]);
+      if (!fromBranch || !toBranch) {
+        throw new BadRequestException(
+          'Una de las sucursales no esta disponible',
+        );
+      }
+      if (!product) throw new NotFoundException('Product was not found');
+
+      const fromStock = await this.branchInventory.ensureStock(
+        tx,
+        user.companyId,
+        dto.fromBranchId,
+        product.id,
+        { minStock: product.minStock },
+      );
+      const toStock = await this.branchInventory.ensureStock(
+        tx,
+        user.companyId,
+        dto.toBranchId,
+        product.id,
+        { minStock: product.minStock },
+      );
+      if (new Prisma.Decimal(fromStock.quantity).lessThan(quantity)) {
+        throw new BadRequestException(
+          `Stock insuficiente en ${fromBranch.name}. Disponible: ${fromStock.quantity.toString()}. Solicitado: ${quantity.toString()}`,
+        );
+      }
+
+      const nextFrom = new Prisma.Decimal(fromStock.quantity).sub(quantity);
+      const nextTo = new Prisma.Decimal(toStock.quantity).add(quantity);
+      await tx.productBranchStock.update({
+        where: { id: fromStock.id },
+        data: { quantity: nextFrom },
+      });
+      await tx.productBranchStock.update({
+        where: { id: toStock.id },
+        data: { quantity: nextTo },
+      });
+      const transfer = await tx.inventoryTransfer.create({
+        data: {
+          companyId: user.companyId,
+          fromBranchId: dto.fromBranchId,
+          toBranchId: dto.toBranchId,
+          note,
+          createdById: user.userId,
+          items: {
+            create: {
+              companyId: user.companyId,
+              productId: product.id,
+              quantity,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      await tx.inventoryMovement.createMany({
+        data: [
+          {
+            companyId: user.companyId,
+            branchId: dto.fromBranchId,
+            productId: product.id,
+            type: InventoryMovementType.ADJUSTMENT_OUT,
+            quantity,
+            unitCost: product.cost,
+            previousStock: fromStock.quantity,
+            newStock: nextFrom,
+            reason: note,
+            referenceType: 'InventoryTransfer',
+            referenceId: transfer.id,
+            createdById: user.userId,
+          },
+          {
+            companyId: user.companyId,
+            branchId: dto.toBranchId,
+            productId: product.id,
+            type: InventoryMovementType.ADJUSTMENT_IN,
+            quantity,
+            unitCost: product.cost,
+            previousStock: toStock.quantity,
+            newStock: nextTo,
+            reason: note,
+            referenceType: 'InventoryTransfer',
+            referenceId: transfer.id,
+            createdById: user.userId,
+          },
+        ],
+      });
+      await this.audit.createWithClient(tx, {
+        companyId: user.companyId,
+        branchId: dto.fromBranchId,
+        userId: user.userId,
+        action: 'INVENTORY_TRANSFER_CREATED',
+        module: 'inventory',
+        entityType: 'InventoryTransfer',
+        entityId: transfer.id,
+        description: `Transferencia de inventario para ${product.name}`,
+        metadata: {
+          productId: product.id,
+          fromBranchId: dto.fromBranchId,
+          toBranchId: dto.toBranchId,
+          quantity: quantity.toString(),
+        },
+      });
+      return transfer.id;
+    });
+
+    return this.findTransfer(user, transferId);
+  }
+
+  async findTransfers(user: AuthUser) {
+    return this.prisma.inventoryTransfer.findMany({
+      where: { companyId: user.companyId },
+      include: {
+        fromBranch: { select: { id: true, name: true, code: true } },
+        toBranch: { select: { id: true, name: true, code: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+        items: {
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async findTransfer(user: AuthUser, id: string) {
+    const transfer = await this.prisma.inventoryTransfer.findFirst({
+      where: { id, companyId: user.companyId },
+      include: {
+        fromBranch: { select: { id: true, name: true, code: true } },
+        toBranch: { select: { id: true, name: true, code: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+        items: {
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        },
+      },
+    });
+    if (!transfer) throw new NotFoundException('Transferencia no encontrada');
+    return transfer;
   }
 
   private buildProductQuery(user: AuthUser, query: InventoryQueryDto) {
@@ -262,7 +491,14 @@ export class InventoryService {
         );
       }
 
-      const previousStock = new Prisma.Decimal(product.stock);
+      const stock = await this.branchInventory.ensureStock(
+        tx,
+        user.companyId,
+        branchId,
+        product.id,
+        { quantity: product.stock, minStock: product.minStock },
+      );
+      const previousStock = new Prisma.Decimal(stock.quantity);
       const newStock =
         operation === 'increase'
           ? previousStock.add(quantityDecimal)
@@ -298,11 +534,11 @@ export class InventoryService {
         }
       }
 
-      const updatedProduct = await tx.product.update({
-        where: { id: product.id },
-        data: { stock: newStock },
-        include: productInventoryInclude,
+      await tx.productBranchStock.update({
+        where: { id: stock.id },
+        data: { quantity: newStock },
       });
+      const updatedProduct = { ...product, stock: newStock };
 
       const movement = await tx.inventoryMovement.create({
         data: {
@@ -322,6 +558,40 @@ export class InventoryService {
 
       return { product: updatedProduct, movement };
     });
+  }
+
+  private async withActiveBranchStock<
+    T extends { id: string; stock: Prisma.Decimal; minStock: Prisma.Decimal },
+  >(user: AuthUser, products: T[]) {
+    const stockMap = await this.branchInventory.stockMap(
+      this.prisma,
+      user.companyId,
+      user.branchId,
+      products.map(({ id }) => id),
+    );
+    return products.map((product) => {
+      const stock = stockMap.get(product.id);
+      return {
+        ...product,
+        stock: stock?.quantity ?? new Prisma.Decimal(0),
+        minStock: stock?.minStock ?? product.minStock,
+        activeBranchId: user.branchId,
+        stockStatus: this.stockStatus(
+          stock?.quantity ?? new Prisma.Decimal(0),
+          stock?.minStock ?? product.minStock,
+        ),
+      };
+    });
+  }
+
+  private stockStatus(
+    quantity: Prisma.Decimal | number | string,
+    minStock: Prisma.Decimal | number | string,
+  ) {
+    const stock = new Prisma.Decimal(quantity);
+    if (stock.lessThanOrEqualTo(0)) return 'OUT_OF_STOCK';
+    if (stock.lessThanOrEqualTo(minStock)) return 'LOW_STOCK';
+    return 'AVAILABLE';
   }
 
   private movementMetadata(movement: {

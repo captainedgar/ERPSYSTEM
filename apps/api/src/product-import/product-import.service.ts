@@ -273,6 +273,23 @@ export class ProductImportService {
           entityId: product.id,
           description: 'Product created from Excel import',
         });
+        await tx.productBranchStock.upsert({
+          where: {
+            companyId_branchId_productId: {
+              companyId: user.companyId,
+              branchId,
+              productId: product.id,
+            },
+          },
+          update: { quantity: row.stock, minStock: row.minStock },
+          create: {
+            companyId: user.companyId,
+            branchId,
+            productId: product.id,
+            quantity: row.stock,
+            minStock: row.minStock,
+          },
+        });
         if (row.stock > 0) {
           await tx.inventoryMovement.create({
             data: {
@@ -295,12 +312,12 @@ export class ProductImportService {
             companyId: user.companyId,
             branchId: user.branchId,
             userId: user.userId,
-            action: 'INVENTORY_INITIAL_STOCK_IMPORTED',
+            action: 'PRODUCT_IMPORT_INITIAL_STOCK_BY_BRANCH',
             module: 'inventory',
             entityType: 'Product',
             entityId: product.id,
             description: 'Initial stock imported from Excel',
-            metadata: { quantity: row.stock },
+            metadata: { branchId, quantity: row.stock },
           });
         }
       }

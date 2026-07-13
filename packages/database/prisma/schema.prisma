@@ -95,6 +95,11 @@ enum InventoryMovementType {
   PURCHASE_IN
 }
 
+enum InventoryTransferStatus {
+  COMPLETED
+  CANCELLED
+}
+
 enum CustomerType {
   INDIVIDUAL
   BUSINESS
@@ -329,6 +334,9 @@ model Company {
   cashSessions               CashSession[]
   cashMovements              CashMovement[]
   inventoryMovements         InventoryMovement[]
+  productBranchStocks        ProductBranchStock[]
+  inventoryTransfers         InventoryTransfer[]
+  inventoryTransferItems     InventoryTransferItem[]
   subscription               CompanySubscription?
   subscriptionPayments       SubscriptionPayment[]
   subscriptionEvents         SubscriptionEvent[]
@@ -347,31 +355,34 @@ model Company {
 }
 
 model Branch {
-  id                 String                 @id @default(cuid())
-  companyId          String
-  name               String
-  code               String
-  phone              String?
-  email              String?
-  address            String?
-  city               String?
-  province           String?
-  isMain             Boolean                @default(false)
-  status             BranchStatus           @default(ACTIVE)
-  company            Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  users              User[]
-  userMemberships    UserBranchMembership[]
-  auditLogs          AuditLog[]
-  sales              Sale[]
-  internalDocuments  InternalDocument[]
-  documentSequences  DocumentSequence[]
-  electronicInvoices ElectronicInvoice[]
-  cashSessions       CashSession[]
-  cashMovements      CashMovement[]
-  inventoryMovements InventoryMovement[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  deletedAt          DateTime?
+  id                  String                 @id @default(cuid())
+  companyId           String
+  name                String
+  code                String
+  phone               String?
+  email               String?
+  address             String?
+  city                String?
+  province            String?
+  isMain              Boolean                @default(false)
+  status              BranchStatus           @default(ACTIVE)
+  company             Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  users               User[]
+  userMemberships     UserBranchMembership[]
+  auditLogs           AuditLog[]
+  sales               Sale[]
+  internalDocuments   InternalDocument[]
+  documentSequences   DocumentSequence[]
+  electronicInvoices  ElectronicInvoice[]
+  cashSessions        CashSession[]
+  cashMovements       CashMovement[]
+  inventoryMovements  InventoryMovement[]
+  productBranchStocks ProductBranchStock[]
+  transfersFrom       InventoryTransfer[]    @relation("InventoryTransferFromBranch")
+  transfersTo         InventoryTransfer[]    @relation("InventoryTransferToBranch")
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  deletedAt           DateTime?
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -405,6 +416,7 @@ model User {
   cashSessionsClosed        CashSession[]          @relation("CashSessionClosedBy")
   cashMovementsCreated      CashMovement[]         @relation("CashMovementCreatedBy")
   inventoryMovementsCreated InventoryMovement[]    @relation("InventoryMovementCreatedBy")
+  inventoryTransfersCreated InventoryTransfer[]    @relation("InventoryTransferCreatedBy")
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
   deletedAt                 DateTime?
@@ -596,38 +608,40 @@ model Unit {
 }
 
 model Product {
-  id                    String                          @id @default(cuid())
-  companyId             String
-  categoryId            String?
-  brandId               String?
-  unitId                String?
-  name                  String
-  description           String?
-  sku                   String?
-  barcode               String?
-  cost                  Decimal                         @default(0) @db.Decimal(12, 2)
-  price                 Decimal                         @default(0) @db.Decimal(12, 2)
-  taxRate               Decimal                         @default(18) @db.Decimal(5, 2)
-  stock                 Decimal                         @default(0) @db.Decimal(14, 3)
-  minStock              Decimal                         @default(0) @db.Decimal(14, 3)
-  trackInventory        Boolean                         @default(true)
-  allowDiscount         Boolean                         @default(true)
-  imageUrl              String?
-  status                CatalogStatus                   @default(ACTIVE)
-  company               Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  category              Category?                       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  brand                 Brand?                          @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  unit                  Unit?                           @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  saleItems             SaleItem[]
-  internalDocumentItems InternalDocumentItem[]
-  inventoryMovements    InventoryMovement[]
-  compatibilityGroups   ProductCompatibilityGroupItem[]
-  alternativeCodes      ProductAlternativeCode[]
-  substitutes           ProductSubstitute[]             @relation("ProductSubstitutes")
-  substituteFor         ProductSubstitute[]             @relation("SubstituteProducts")
-  createdAt             DateTime                        @default(now())
-  updatedAt             DateTime                        @updatedAt
-  deletedAt             DateTime?
+  id                     String                          @id @default(cuid())
+  companyId              String
+  categoryId             String?
+  brandId                String?
+  unitId                 String?
+  name                   String
+  description            String?
+  sku                    String?
+  barcode                String?
+  cost                   Decimal                         @default(0) @db.Decimal(12, 2)
+  price                  Decimal                         @default(0) @db.Decimal(12, 2)
+  taxRate                Decimal                         @default(18) @db.Decimal(5, 2)
+  stock                  Decimal                         @default(0) @db.Decimal(14, 3)
+  minStock               Decimal                         @default(0) @db.Decimal(14, 3)
+  trackInventory         Boolean                         @default(true)
+  allowDiscount          Boolean                         @default(true)
+  imageUrl               String?
+  status                 CatalogStatus                   @default(ACTIVE)
+  company                Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category               Category?                       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand                  Brand?                          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  unit                   Unit?                           @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  saleItems              SaleItem[]
+  internalDocumentItems  InternalDocumentItem[]
+  inventoryMovements     InventoryMovement[]
+  branchStocks           ProductBranchStock[]
+  inventoryTransferItems InventoryTransferItem[]
+  compatibilityGroups    ProductCompatibilityGroupItem[]
+  alternativeCodes       ProductAlternativeCode[]
+  substitutes            ProductSubstitute[]             @relation("ProductSubstitutes")
+  substituteFor          ProductSubstitute[]             @relation("SubstituteProducts")
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  deletedAt              DateTime?
 
   @@unique([companyId, sku])
   @@unique([companyId, barcode])
@@ -1126,6 +1140,65 @@ model CashMovement {
   @@index([companyId, saleId])
   @@index([companyId, branchId, createdAt(sort: Desc)])
   @@map("cash_movements")
+}
+
+model ProductBranchStock {
+  id        String   @id @default(cuid())
+  companyId String
+  branchId  String
+  productId String
+  quantity  Decimal  @default(0) @db.Decimal(14, 3)
+  minStock  Decimal  @default(0) @db.Decimal(14, 3)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, branchId, productId])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([productId])
+  @@map("product_branch_stocks")
+}
+
+model InventoryTransfer {
+  id           String                  @id @default(cuid())
+  companyId    String
+  fromBranchId String
+  toBranchId   String
+  status       InventoryTransferStatus @default(COMPLETED)
+  note         String?
+  createdById  String?
+  company      Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  fromBranch   Branch                  @relation("InventoryTransferFromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch     Branch                  @relation("InventoryTransferToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  createdBy    User?                   @relation("InventoryTransferCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items        InventoryTransferItem[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([companyId, fromBranchId])
+  @@index([companyId, toBranchId])
+  @@map("inventory_transfers")
+}
+
+model InventoryTransferItem {
+  id         String            @id @default(cuid())
+  companyId  String
+  transferId String
+  productId  String
+  quantity   Decimal           @db.Decimal(14, 3)
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transfer   InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt  DateTime          @default(now())
+
+  @@index([companyId])
+  @@index([transferId])
+  @@index([productId])
+  @@map("inventory_transfer_items")
 }
 
 model InventoryMovement {

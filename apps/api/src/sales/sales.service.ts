@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { CashRequiredForSaleError, CashService } from '../cash/cash.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { BranchInventoryService } from '../inventory/branch-inventory.service';
 import { PosService, type CartCalculation } from '../pos/pos.service';
 import { PosItemType } from '../pos/pos.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,6 +70,7 @@ export class SalesService {
     private readonly pos: PosService,
     private readonly cash: CashService,
     private readonly audit: AuditService,
+    private readonly branchInventory: BranchInventoryService,
   ) {}
 
   async findAll(user: AuthUser, query: SalesQueryDto) {
@@ -160,10 +162,15 @@ export class SalesService {
         }
 
         const cashSession = await this.cash.resolveSessionForSale(tx, user);
-        const calculation = await this.pos.calculateCart(tx, user.companyId, {
-          customerId: dto.customerId,
-          items: dto.items,
-        });
+        const calculation = await this.pos.calculateCart(
+          tx,
+          user.companyId,
+          branchId,
+          {
+            customerId: dto.customerId,
+            items: dto.items,
+          },
+        );
         if (!calculation.valid) {
           const stockError = calculation.errors.find(
             ({ code }) => code === 'INSUFFICIENT_STOCK',
@@ -359,12 +366,19 @@ export class SalesService {
             'No se pudo restaurar un producto de la venta',
           );
         }
-        const updatedProduct = await tx.product.update({
-          where: { id: product.id },
-          data: { stock: { increment: quantity } },
+        const stock = await this.branchInventory.ensureStock(
+          tx,
+          user.companyId,
+          sale.branchId,
+          product.id,
+          { quantity: product.stock, minStock: product.minStock },
+        );
+        const previousStock = new Prisma.Decimal(stock.quantity);
+        const newStock = previousStock.add(quantity);
+        await tx.productBranchStock.update({
+          where: { id: stock.id },
+          data: { quantity: newStock },
         });
-        const newStock = new Prisma.Decimal(updatedProduct.stock);
-        const previousStock = newStock.sub(quantity);
         const movement = await tx.inventoryMovement.create({
           data: {
             companyId: user.companyId,
@@ -457,18 +471,25 @@ export class SalesService {
           request.quantity,
         );
       }
+      const stock = await this.branchInventory.ensureStock(
+        tx,
+        user.companyId,
+        user.branchId!,
+        product.id,
+        { quantity: product.stock, minStock: product.minStock },
+      );
       const updated = calculation.allowNegativeStock
-        ? await tx.product.updateMany({
-            where: { id: product.id, companyId: user.companyId },
-            data: { stock: { decrement: quantity } },
+        ? await tx.productBranchStock.updateMany({
+            where: { id: stock.id, companyId: user.companyId },
+            data: { quantity: { decrement: quantity } },
           })
-        : await tx.product.updateMany({
+        : await tx.productBranchStock.updateMany({
             where: {
-              id: product.id,
+              id: stock.id,
               companyId: user.companyId,
-              stock: { gte: quantity },
+              quantity: { gte: quantity },
             },
-            data: { stock: { decrement: quantity } },
+            data: { quantity: { decrement: quantity } },
           });
       if (updated.count !== 1) {
         throw new InsufficientStockError(
@@ -477,10 +498,10 @@ export class SalesService {
           request.quantity,
         );
       }
-      const updatedProduct = await tx.product.findUniqueOrThrow({
-        where: { id: product.id },
+      const updatedStock = await tx.productBranchStock.findUniqueOrThrow({
+        where: { id: stock.id },
       });
-      const newStock = new Prisma.Decimal(updatedProduct.stock);
+      const newStock = new Prisma.Decimal(updatedStock.quantity);
       const previousStock = newStock.add(quantity);
       const movement = await tx.inventoryMovement.create({
         data: {
@@ -502,7 +523,7 @@ export class SalesService {
         companyId: user.companyId,
         branchId: user.branchId,
         userId: user.userId,
-        action: 'SALE_STOCK_DEDUCTED',
+        action: 'SALE_STOCK_DEDUCTED_BY_BRANCH',
         module: 'sales',
         entityType: 'InventoryMovement',
         entityId: movement.id,

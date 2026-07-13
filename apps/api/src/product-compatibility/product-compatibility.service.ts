@@ -14,6 +14,7 @@ import {
 
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { BranchInventoryService } from '../inventory/branch-inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AddAlternativeCodeDto,
@@ -47,6 +48,7 @@ export class ProductCompatibilityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly branchInventory: BranchInventoryService,
   ) {}
 
   listGroups(user: AuthUser, query: CompatibilityQueryDto) {
@@ -364,6 +366,7 @@ export class ProductCompatibilityService {
     );
     const alternatives = await this.collectAlternatives(
       user.companyId,
+      user.branchId,
       productId,
     );
     return { requestedProduct, alternatives };
@@ -398,11 +401,18 @@ export class ProductCompatibilityService {
       user,
       alternativeCode.productId,
     );
+    const stockMap = await this.branchInventory.stockMap(
+      this.prisma,
+      user.companyId,
+      user.branchId,
+      [alternativeCode.product.id],
+    );
+    const exactStock = stockMap.get(alternativeCode.product.id)?.quantity;
     const exactAlternative =
-      Number(alternativeCode.product.stock) > 0
+      Number(exactStock ?? 0) > 0
         ? [
             toAlternative(
-              alternativeCode.product,
+              { ...alternativeCode.product, stock: exactStock! },
               'Codigo alterno/OEM registrado',
               'EQUIVALENT',
             ),
@@ -417,7 +427,11 @@ export class ProductCompatibilityService {
     };
   }
 
-  private async collectAlternatives(companyId: string, productId: string) {
+  private async collectAlternatives(
+    companyId: string,
+    branchId: string | null,
+    productId: string,
+  ) {
     const [substitutes, groupItems, alternativeCodes] = await Promise.all([
       this.prisma.productSubstitute.findMany({
         where: {
@@ -499,11 +513,23 @@ export class ProductCompatibilityService {
         );
       }
     }
-    return [...byId.values()].sort(
-      (left, right) =>
-        Number(right.stock) - Number(left.stock) ||
-        left.name.localeCompare(right.name, 'es', { sensitivity: 'base' }),
+    const stockMap = await this.branchInventory.stockMap(
+      this.prisma,
+      companyId,
+      branchId,
+      [...byId.keys()],
     );
+    return [...byId.values()]
+      .map((item) => ({
+        ...item,
+        stock: stockMap.get(item.id)?.quantity ?? new Prisma.Decimal(0),
+      }))
+      .filter((item) => Number(item.stock) > 0)
+      .sort(
+        (left, right) =>
+          Number(right.stock) - Number(left.stock) ||
+          left.name.localeCompare(right.name, 'es', { sensitivity: 'base' }),
+      );
   }
 
   private async ensureProduct(companyId: string, productId: string) {
@@ -556,7 +582,6 @@ function addAlternative(
   reason: string,
   relationType: string,
 ) {
-  if (product.stock === null || Number(product.stock) <= 0) return;
   map.set(product.id, toAlternative(product, reason, relationType));
 }
 
