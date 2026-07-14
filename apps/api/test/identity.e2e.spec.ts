@@ -5441,6 +5441,142 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(crossCompanyMovements.status).toBe(404);
     expect(crossCompanyManualEntry.status).toBe(404);
   });
+
+  it('exports operational data with permissions, branch scope, backup metadata and audit logs', async () => {
+    const companyA = await registerCompany('data-export-a');
+    const companyB = await registerCompany('data-export-b');
+    await http<SettingsResponse>(
+      'PATCH',
+      '/business-settings',
+      { requireOpenCashForSales: false },
+      companyA.accessToken,
+    );
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Exportacion', code: 'EXP' },
+      companyA.accessToken,
+    );
+    const productA = await http<Product>(
+      'POST',
+      '/products',
+      {
+        name: 'Producto exportable',
+        sku: 'EXP-001',
+        price: 100,
+        stock: 5,
+        minStock: 1,
+      },
+      companyA.accessToken,
+    );
+    const productB = await http<Product>(
+      'POST',
+      '/products',
+      { name: 'Producto otra empresa', sku: 'EXP-X', price: 50, stock: 9 },
+      companyB.accessToken,
+    );
+    await http<unknown>(
+      'POST',
+      `/inventory/products/${productA.body.id}/manual-entry`,
+      { quantity: 2, reason: 'Stock export sucursal' },
+      companyA.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const customer = await http<Customer>(
+      'POST',
+      '/customers',
+      basicCustomerPayload('Cliente exportable'),
+      companyA.accessToken,
+    );
+    const sale = await http<{ saleNumber: string }>(
+      'POST',
+      '/sales',
+      {
+        ...salePayload(PosItemType.PRODUCT, productA.body.id, 1, 118),
+        customerId: customer.body.id,
+      },
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const cashier = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.CASHIER).id,
+      companyA.branch.id,
+      'data-export-cashier',
+    );
+    const warehouse = await createUser(
+      companyA.accessToken,
+      findRole(roles, UserRole.WAREHOUSE).id,
+      companyA.branch.id,
+      'data-export-warehouse',
+    );
+    const [cashierSession, warehouseSession] = await Promise.all([
+      login(cashier.email),
+      login(warehouse.email),
+    ]);
+
+    const cashierProducts = await downloadExportText(
+      '/data-export/products?format=csv',
+      cashierSession.accessToken,
+    );
+    const products = await downloadExportText(
+      '/data-export/products?format=csv',
+      companyA.accessToken,
+    );
+    const inventoryBranch = await downloadExportText(
+      '/data-export/inventory?format=csv&scope=active_branch',
+      companyA.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const allBranchesDenied = await downloadExportText(
+      '/data-export/inventory?format=csv&scope=all_branches',
+      warehouseSession.accessToken,
+    );
+    const sales = await downloadExportText(
+      '/data-export/sales?format=csv&from=2000-01-01&to=2999-12-31',
+      companyA.accessToken,
+    );
+    const backup = await downloadExportBuffer(
+      '/data-export/backup?scope=active_branch',
+      companyA.accessToken,
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(backup.body);
+    const metadata = workbook.getWorksheet('Metadata');
+    const workbookJson = JSON.stringify(workbook.model);
+    const auditActions = (
+      await prisma.auditLog.findMany({
+        where: { companyId: companyA.company.id, module: 'data_export' },
+        select: { action: true },
+      })
+    ).map(({ action }) => action);
+
+    expect(productB.status).toBe(201);
+    expect(sale.status).toBe(201);
+    expect(cashierProducts.status).toBe(403);
+    expect(products.status).toBe(200);
+    expect(products.body).toContain('Producto exportable');
+    expect(products.body).not.toContain('Producto otra empresa');
+    expect(inventoryBranch.status).toBe(200);
+    expect(inventoryBranch.body).toContain('Sucursal Exportacion');
+    expect(inventoryBranch.body).toContain('"2"');
+    expect(allBranchesDenied.status).toBe(403);
+    expect(sales.status).toBe(200);
+    expect(sales.body).toContain(sale.body.saleNumber);
+    expect(backup.status).toBe(200);
+    expect(metadata?.getCell('A1').value).toBe('companyName');
+    expect(workbook.getWorksheet('productos')).toBeTruthy();
+    expect(workbookJson).not.toContain('passwordHash');
+    expect(workbookJson).not.toContain('refreshToken');
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'DATA_EXPORT_PRODUCTS',
+        'DATA_EXPORT_INVENTORY',
+        'DATA_EXPORT_SALES',
+        'DATA_EXPORT_BACKUP_GENERATED',
+      ]),
+    );
+  });
 });
 
 function configureTestEnvironment() {
@@ -5732,6 +5868,37 @@ async function http<T>(
   const text = await response.text();
   const parsed: unknown = text ? JSON.parse(text) : undefined;
   return { status: response.status, body: parsed as T };
+}
+
+async function downloadExportText(
+  path: string,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  const response = await downloadExport(path, accessToken, extraHeaders);
+  return { status: response.status, body: await response.text() };
+}
+
+async function downloadExportBuffer(
+  path: string,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  const response = await downloadExport(path, accessToken, extraHeaders);
+  return { status: response.status, body: await response.arrayBuffer() };
+}
+
+async function downloadExport(
+  path: string,
+  accessToken: string,
+  extraHeaders: Record<string, string>,
+) {
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
+  return fetch(`${apiBaseUrl}${path}`, { headers });
 }
 
 async function uploadLogo(

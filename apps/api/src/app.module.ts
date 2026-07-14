@@ -14,6 +14,7 @@ import { CompanySuspensionGuard } from './common/guards/company-suspension.guard
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { CompaniesModule } from './companies/companies.module';
 import { CustomersModule } from './customers/customers.module';
+import { DataExportModule } from './data-export/data-export.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { HealthController } from './health.controller';
 import { PermissionsModule } from './permissions/permissions.module';
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module';
     InventoryModule,
     CompaniesModule,
     CustomersModule,
+    DataExportModule,
     BranchesModule,
     UsersModule,
     BusinessSettingsModule,

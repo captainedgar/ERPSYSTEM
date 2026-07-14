@@ -496,7 +496,7 @@ export class InventoryService {
         user.companyId,
         branchId,
         product.id,
-        { quantity: product.stock, minStock: product.minStock },
+        { minStock: product.minStock },
       );
       const previousStock = new Prisma.Decimal(stock.quantity);
       const newStock =
