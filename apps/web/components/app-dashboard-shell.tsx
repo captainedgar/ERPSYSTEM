@@ -39,7 +39,14 @@ const navGroups = [
   },
   {
     label: 'Analitica',
-    items: [{ href: '/reports', label: 'Reportes', marker: 'RE' }],
+    items: [
+      { href: '/reports', label: 'Reportes', marker: 'RE' },
+      {
+        href: '/financial-dashboard',
+        label: 'Dashboard financiero',
+        marker: 'FI',
+      },
+    ],
   },
 ];
 
@@ -56,6 +63,7 @@ const dashboardPrefixes = [
   '/internal-documents',
   '/data-export',
   '/reports',
+  '/financial-dashboard',
   '/settings',
   '/fiscal',
 ];

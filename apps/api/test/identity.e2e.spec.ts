@@ -3177,6 +3177,327 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(reportText).not.toContain('refreshToken');
   });
 
+  it('serves financial dashboard KPIs with permissions and branch isolation', async () => {
+    const companyA = await registerCompany('financial-dashboard-a');
+    const companyB = await registerCompany('financial-dashboard-b');
+    const branch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Financiera Este', code: 'FEST' },
+      companyA.accessToken,
+    );
+    const roles = await getRoles(companyA.accessToken);
+    const [cashier, warehouse] = await Promise.all([
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.CASHIER).id,
+        companyA.branch.id,
+        'financial-dashboard-cashier',
+      ),
+      createUser(
+        companyA.accessToken,
+        findRole(roles, UserRole.WAREHOUSE).id,
+        companyA.branch.id,
+        'financial-dashboard-warehouse',
+      ),
+    ]);
+    const [cashierSession, warehouseSession] = await Promise.all([
+      login(cashier.email),
+      login(warehouse.email),
+    ]);
+    const [customer, mainProduct, branchProduct, foreignProduct] =
+      await Promise.all([
+        http<Customer>(
+          'POST',
+          '/customers',
+          basicCustomerPayload('Cliente financiero'),
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto financiero principal',
+            price: 100,
+            cost: 60,
+            taxRate: 0,
+            stock: 2,
+            minStock: 5,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto financiero sucursal',
+            price: 50,
+            cost: 25,
+            taxRate: 0,
+            stock: 0,
+            minStock: 5,
+            trackInventory: true,
+          },
+          companyA.accessToken,
+        ),
+        http<Product>(
+          'POST',
+          '/products',
+          {
+            name: 'Producto financiero externo',
+            price: 90,
+            cost: 40,
+            taxRate: 0,
+            stock: 3,
+            minStock: 1,
+            trackInventory: true,
+          },
+          companyB.accessToken,
+        ),
+      ]);
+    await Promise.all([
+      openCash(companyA.accessToken, companyA.branch.id, 10),
+      openCash(companyA.accessToken, branch.body.id, 10, {
+        'X-Branch-Id': branch.body.id,
+      }),
+      openCash(companyB.accessToken, companyB.branch.id, 10),
+    ]);
+    await http<unknown>(
+      'POST',
+      `/inventory/products/${branchProduct.body.id}/manual-entry`,
+      { quantity: 3, reason: 'Stock dashboard financiero' },
+      companyA.accessToken,
+      { 'X-Branch-Id': branch.body.id },
+    );
+    const [mainSale, branchSale, foreignSale] = await Promise.all([
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        {
+          ...salePayload(PosItemType.PRODUCT, mainProduct.body.id, 2, 200),
+          customerId: customer.body.id,
+        },
+        companyA.accessToken,
+      ),
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        {
+          items: [
+            {
+              itemType: PosItemType.PRODUCT,
+              itemId: branchProduct.body.id,
+              quantity: 1,
+              discountAmount: 0,
+            },
+          ],
+          payments: [{ method: PaymentMethod.CARD, amount: 50 }],
+        },
+        companyA.accessToken,
+        { 'X-Branch-Id': branch.body.id },
+      ),
+      http<{ id: string }>(
+        'POST',
+        '/sales',
+        salePayload(PosItemType.PRODUCT, foreignProduct.body.id, 1, 90),
+        companyB.accessToken,
+      ),
+    ]);
+    const from = encodeURIComponent(
+      new Date(Date.now() - 86_400_000).toISOString(),
+    );
+    const to = encodeURIComponent(
+      new Date(Date.now() + 86_400_000).toISOString(),
+    );
+    const range = `from=${from}&to=${to}`;
+
+    const [
+      anonymous,
+      summary,
+      branchSummary,
+      allSummary,
+      trend,
+      paymentMethods,
+      branches,
+      topProducts,
+      topCustomers,
+      cashHealth,
+      inventoryValue,
+      alerts,
+      cashierAllBranches,
+      warehouseSales,
+      warehouseInventory,
+    ] = await Promise.all([
+      http<unknown>('GET', `/financial-dashboard/summary?${range}`),
+      http<{
+        grossSales: number;
+        salesCount: number;
+        activeBranch: { id: string };
+      }>(
+        'GET',
+        `/financial-dashboard/summary?${range}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{
+        grossSales: number;
+        salesCount: number;
+        activeBranch: { id: string };
+      }>(
+        'GET',
+        `/financial-dashboard/summary?${range}`,
+        undefined,
+        companyA.accessToken,
+        { 'X-Branch-Id': branch.body.id },
+      ),
+      http<{ grossSales: number; salesCount: number }>(
+        'GET',
+        `/financial-dashboard/summary?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ grossSales: number; salesCount: number }> }>(
+        'GET',
+        `/financial-dashboard/sales-trend?${range}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ paymentMethod: PaymentMethod; amount: number }> }>(
+        'GET',
+        `/financial-dashboard/payment-methods?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ branchId: string; grossSales: number }> }>(
+        'GET',
+        `/financial-dashboard/branches?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ productId: string; grossSales: number }> }>(
+        'GET',
+        `/financial-dashboard/top-products?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ customerId: string; totalPurchased: number }> }>(
+        'GET',
+        `/financial-dashboard/top-customers?${range}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ cashSales: number; openSessions: number }>(
+        'GET',
+        `/financial-dashboard/cash-health?${range}`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{
+        inventoryCostValue: number;
+        productsWithoutStock: number;
+        stockByBranch: unknown[];
+      }>(
+        'GET',
+        `/financial-dashboard/inventory-value?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<{ items: Array<{ type: string; count: number }> }>(
+        'GET',
+        `/financial-dashboard/alerts?${range}&scope=all_branches`,
+        undefined,
+        companyA.accessToken,
+      ),
+      http<unknown>(
+        'GET',
+        `/financial-dashboard/summary?${range}&scope=all_branches`,
+        undefined,
+        cashierSession.accessToken,
+      ),
+      http<unknown>(
+        'GET',
+        `/financial-dashboard/sales-trend?${range}`,
+        undefined,
+        warehouseSession.accessToken,
+      ),
+      http<{ inventoryCostValue: number }>(
+        'GET',
+        `/financial-dashboard/inventory-value?${range}`,
+        undefined,
+        warehouseSession.accessToken,
+      ),
+    ]);
+    const serializedDashboard = JSON.stringify({
+      summary: summary.body,
+      trend: trend.body,
+      paymentMethods: paymentMethods.body,
+      branches: branches.body,
+      topProducts: topProducts.body,
+      topCustomers: topCustomers.body,
+      cashHealth: cashHealth.body,
+      inventoryValue: inventoryValue.body,
+      alerts: alerts.body,
+    });
+
+    expect(branch.status).toBe(201);
+    expect(mainSale.status).toBe(201);
+    expect(branchSale.status).toBe(201);
+    expect(foreignSale.status).toBe(201);
+    expect(anonymous.status).toBe(401);
+    expect(summary.status).toBe(200);
+    expect(summary.body.grossSales).toBe(200);
+    expect(summary.body.salesCount).toBe(1);
+    expect(summary.body.activeBranch.id).toBe(companyA.branch.id);
+    expect(branchSummary.body.grossSales).toBe(50);
+    expect(branchSummary.body.activeBranch.id).toBe(branch.body.id);
+    expect(allSummary.body.grossSales).toBe(250);
+    expect(allSummary.body.salesCount).toBe(2);
+    expect(trend.body.items[0]).toEqual(
+      expect.objectContaining({ grossSales: 200, salesCount: 1 }),
+    );
+    expect(paymentMethods.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          paymentMethod: PaymentMethod.CASH,
+          amount: 200,
+        }),
+        expect.objectContaining({
+          paymentMethod: PaymentMethod.CARD,
+          amount: 50,
+        }),
+      ]),
+    );
+    expect(branches.body.items.map(({ branchId }) => branchId).sort()).toEqual(
+      [companyA.branch.id, branch.body.id].sort(),
+    );
+    expect(topProducts.body.items.map(({ productId }) => productId)).toEqual(
+      expect.arrayContaining([mainProduct.body.id, branchProduct.body.id]),
+    );
+    expect(
+      topProducts.body.items.map(({ productId }) => productId),
+    ).not.toContain(foreignProduct.body.id);
+    expect(topCustomers.body.items[0]).toEqual(
+      expect.objectContaining({
+        customerId: customer.body.id,
+        totalPurchased: 200,
+      }),
+    );
+    expect(cashHealth.body.openSessions).toBe(1);
+    expect(cashHealth.body.cashSales).toBe(200);
+    expect(inventoryValue.body.inventoryCostValue).toBe(50);
+    expect(inventoryValue.body.productsWithoutStock).toBeGreaterThanOrEqual(1);
+    expect(inventoryValue.body.stockByBranch).toHaveLength(2);
+    expect(alerts.body.items.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(['OUT_OF_STOCK', 'LOW_STOCK']),
+    );
+    expect(cashierAllBranches.status).toBe(403);
+    expect(warehouseSales.status).toBe(403);
+    expect(warehouseInventory.status).toBe(200);
+    expect(serializedDashboard).not.toContain('passwordHash');
+    expect(serializedDashboard).not.toContain('refreshToken');
+  });
+
   it('creates, prints, voids and isolates internal non-fiscal documents', async () => {
     const companyA = await registerCompany('internal-documents-a');
     const companyB = await registerCompany('internal-documents-b');
