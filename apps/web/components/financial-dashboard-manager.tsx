@@ -9,10 +9,13 @@ import {
   type FinancialDashboardFilters,
   type FinancialDashboardScope,
 } from '@/lib/financial-dashboard';
+import { hasPermission } from '@/lib/permissions';
+import { useAuth } from './auth-provider';
 
 type Preset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
 export function FinancialDashboardManager() {
+  const { user } = useAuth();
   const [preset, setPreset] = useState<Preset>('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -108,7 +111,9 @@ export function FinancialDashboardManager() {
                 }
               >
                 <option value="active_branch">Sucursal activa</option>
-                <option value="all_branches">Todas</option>
+                {hasPermission(user, 'financial_dashboard.branches') && (
+                  <option value="all_branches">Todas</option>
+                )}
               </select>
             </Field>
           </div>

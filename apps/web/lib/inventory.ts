@@ -116,6 +116,10 @@ export function listInventoryTransfers() {
   return apiRequest<InventoryTransfer[]>('/inventory/transfers');
 }
 
+export function getInventoryTransfer(id: string) {
+  return apiRequest<InventoryTransfer>(`/inventory/transfers/${id}`);
+}
+
 export function createInventoryTransfer(payload: {
   fromBranchId: string;
   toBranchId: string;

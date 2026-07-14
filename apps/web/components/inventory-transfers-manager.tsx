@@ -243,6 +243,12 @@ export function InventoryTransfersManager() {
                         {new Date(transfer.createdAt).toLocaleString()}
                       </span>
                     </div>
+                    <Link
+                      className="mt-3 inline-flex text-sm font-semibold text-blue-700"
+                      href={`/inventory/transfers/${transfer.id}`}
+                    >
+                      Ver detalle
+                    </Link>
                   </article>
                 );
               })}

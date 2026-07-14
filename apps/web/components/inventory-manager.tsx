@@ -11,7 +11,9 @@ import {
   createManualEntry,
   getInventory,
   getLowStockInventory,
+  getProductStockByBranch,
   InventoryMovementType,
+  type BranchStockItem,
   type InventoryListResponse,
   type InventoryProduct,
 } from '@/lib/inventory';
@@ -47,6 +49,10 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [stockDetail, setStockDetail] = useState<{
+    productName: string;
+    items: BranchStockItem[];
+  } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -133,6 +139,20 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function showBranchStock(product: InventoryProduct) {
+    setError('');
+    try {
+      const stock = await getProductStockByBranch(product.id);
+      setStockDetail({ productName: stock.product.name, items: stock.items });
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo cargar el stock por sucursal.',
+      );
     }
   }
 
@@ -340,6 +360,46 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
             </form>
 
             <div className="mt-5 grid gap-3">
+              {stockDetail && (
+                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-semibold text-blue-950">
+                        Stock por sucursal
+                      </h2>
+                      <p className="mt-1 text-sm text-blue-800">
+                        {stockDetail.productName}. La fuente operativa es el
+                        stock por sucursal; el stock heredado del producto es
+                        referencia historica.
+                      </p>
+                    </div>
+                    <button
+                      className="text-sm font-semibold text-blue-700"
+                      type="button"
+                      onClick={() => setStockDetail(null)}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    {stockDetail.items.map((item) => (
+                      <div
+                        className="rounded-xl border border-blue-100 bg-white p-3"
+                        key={item.branch.id}
+                      >
+                        <p className="font-semibold text-slate-950">
+                          {item.branch.name}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Stock {Number(item.quantity)} / minimo{' '}
+                          {Number(item.minStock)}
+                        </p>
+                        <BranchStockBadge status={item.status} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               {error && !items.length && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
                   <p>{error}</p>
@@ -426,6 +486,13 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
                       >
                         Ajuste -
                       </Button>
+                      <Button
+                        onClick={() => void showBranchStock(product)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        Ver stock por sucursal
+                      </Button>
                     </div>
                   </article>
                 );
@@ -435,5 +502,29 @@ export function InventoryManager({ mode }: { mode: InventoryMode }) {
         </div>
       </div>
     </main>
+  );
+}
+
+function BranchStockBadge({
+  status,
+}: {
+  status: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+}) {
+  const styles = {
+    AVAILABLE: 'bg-emerald-50 text-emerald-700',
+    LOW_STOCK: 'bg-amber-50 text-amber-700',
+    OUT_OF_STOCK: 'bg-red-50 text-red-700',
+  };
+  const labels = {
+    AVAILABLE: 'Disponible',
+    LOW_STOCK: 'Bajo stock',
+    OUT_OF_STOCK: 'Sin stock',
+  };
+  return (
+    <span
+      className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status]}`}
+    >
+      {labels[status]}
+    </span>
   );
 }

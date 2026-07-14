@@ -14,6 +14,8 @@ import {
   voidInternalDocument,
   type InternalDocument,
 } from '@/lib/internal-documents';
+import { createElectronicInvoiceFromInternalDocument } from '@/lib/fiscal';
+import { hasPermission } from '@/lib/permissions';
 
 export function InternalDocumentDetail({ id }: { id: string }) {
   const router = useRouter();
@@ -22,6 +24,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [voiding, setVoiding] = useState(false);
+  const [creatingFiscal, setCreatingFiscal] = useState(false);
   const [error, setError] = useState('');
 
   const canView = [
@@ -34,6 +37,7 @@ export function InternalDocumentDetail({ id }: { id: string }) {
   const canVoid = ['OWNER', 'ADMIN', 'ACCOUNTING'].includes(
     user?.role.code ?? '',
   );
+  const canCreateFiscal = hasPermission(user, 'fiscal.documents.create');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -80,6 +84,26 @@ export function InternalDocumentDetail({ id }: { id: string }) {
       );
     } finally {
       setVoiding(false);
+    }
+  }
+
+  async function createFiscalDraft() {
+    if (!document) return;
+    setCreatingFiscal(true);
+    setError('');
+    try {
+      const invoice = await createElectronicInvoiceFromInternalDocument(
+        document.id,
+      );
+      router.push(`/fiscal/electronic-invoices/${invoice.id}`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No tienes permiso para realizar esta accion.',
+      );
+    } finally {
+      setCreatingFiscal(false);
     }
   }
 
@@ -224,6 +248,21 @@ export function InternalDocumentDetail({ id }: { id: string }) {
             <div className="mt-5 rounded-2xl border border-amber-900 bg-amber-950/30 p-4 text-sm text-amber-100">
               Documento interno no fiscal. No válido como comprobante fiscal.
             </div>
+
+            {canCreateFiscal &&
+              document.status === InternalDocumentStatus.ISSUED && (
+                <Button
+                  className="mt-4 w-full"
+                  disabled={creatingFiscal}
+                  onClick={() => void createFiscalDraft()}
+                  type="button"
+                  variant="secondary"
+                >
+                  {creatingFiscal
+                    ? 'Generando...'
+                    : 'Crear e-CF mock desde documento'}
+                </Button>
+              )}
 
             {document.status === InternalDocumentStatus.VOIDED && (
               <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">

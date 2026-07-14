@@ -13,6 +13,7 @@ import {
 
 import { useAuth } from '@/components/auth-provider';
 import { listCatalog, type Product } from '@/lib/catalog';
+import { hasPermission } from '@/lib/permissions';
 import {
   addAlternativeCode,
   addProductToCompatibilityGroup,
@@ -71,6 +72,7 @@ export function ProductCompatibilityManager() {
   const [message, setMessage] = useState('');
 
   const selectedProduct = products.find(({ id }) => id === selectedProductId);
+  const canManage = hasPermission(user, 'product_compatibility.manage');
   const substituteOptions = useMemo(
     () => products.filter(({ id }) => id !== selectedProductId),
     [products, selectedProductId],
@@ -286,7 +288,7 @@ export function ProductCompatibilityManager() {
                       }
                     />
                   </label>
-                  <Button disabled={submitting} type="submit">
+                  <Button disabled={submitting || !canManage} type="submit">
                     Crear grupo
                   </Button>
                 </div>
@@ -308,7 +310,10 @@ export function ProductCompatibilityManager() {
                   </select>
                   <Button
                     disabled={
-                      submitting || !selectedGroupId || !selectedProductId
+                      submitting ||
+                      !canManage ||
+                      !selectedGroupId ||
+                      !selectedProductId
                     }
                     onClick={() => void assignGroup()}
                     type="button"
@@ -322,7 +327,9 @@ export function ProductCompatibilityManager() {
                       key={group.id}
                       title={group.code}
                       subtitle={group.name}
-                      onRemove={() => void removeGroup(group.id)}
+                      onRemove={
+                        canManage ? () => void removeGroup(group.id) : undefined
+                      }
                     />
                   ))}
                 </List>
@@ -363,7 +370,7 @@ export function ProductCompatibilityManager() {
                     ))}
                   </select>
                   <Button
-                    disabled={submitting || !selectedProductId}
+                    disabled={submitting || !canManage || !selectedProductId}
                     type="submit"
                   >
                     Agregar codigo
@@ -375,14 +382,17 @@ export function ProductCompatibilityManager() {
                       key={code.id}
                       title={code.code}
                       subtitle={code.type}
-                      onRemove={() =>
-                        void run(async () => {
-                          await removeAlternativeCode(
-                            selectedProductId,
-                            code.id,
-                          );
-                          await refreshCompatibility();
-                        })
+                      onRemove={
+                        canManage
+                          ? () =>
+                              void run(async () => {
+                                await removeAlternativeCode(
+                                  selectedProductId,
+                                  code.id,
+                                );
+                                await refreshCompatibility();
+                              })
+                          : undefined
                       }
                     />
                   ))}
@@ -441,7 +451,7 @@ export function ProductCompatibilityManager() {
                     Bidireccional
                   </label>
                   <Button
-                    disabled={submitting || !selectedProductId}
+                    disabled={submitting || !canManage || !selectedProductId}
                     type="submit"
                   >
                     Agregar sustituto
@@ -459,11 +469,17 @@ export function ProductCompatibilityManager() {
                       subtitle={`${item.type} / ${
                         item.isBidirectional ? 'Bidireccional' : 'Direccional'
                       }`}
-                      onRemove={() =>
-                        void run(async () => {
-                          await removeSubstitute(selectedProductId, item.id);
-                          await refreshCompatibility();
-                        })
+                      onRemove={
+                        canManage
+                          ? () =>
+                              void run(async () => {
+                                await removeSubstitute(
+                                  selectedProductId,
+                                  item.id,
+                                );
+                                await refreshCompatibility();
+                              })
+                          : undefined
                       }
                     />
                   ))}
@@ -526,7 +542,7 @@ function Row({
   subtitle,
   title,
 }: {
-  onRemove: () => void;
+  onRemove?: () => void;
   subtitle: string;
   title: string;
 }) {
@@ -536,13 +552,15 @@ function Row({
         <p className="text-sm font-semibold">{title}</p>
         <p className="text-xs text-slate-500">{subtitle}</p>
       </div>
-      <button
-        className="text-xs font-semibold text-red-600"
-        onClick={onRemove}
-        type="button"
-      >
-        Quitar
-      </button>
+      {onRemove && (
+        <button
+          className="text-xs font-semibold text-red-600"
+          onClick={onRemove}
+          type="button"
+        >
+          Quitar
+        </button>
+      )}
     </div>
   );
 }

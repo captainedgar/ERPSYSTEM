@@ -14,6 +14,8 @@ import {
   listSaleInternalDocuments,
   type InternalDocument,
 } from '@/lib/internal-documents';
+import { createElectronicInvoiceFromSale } from '@/lib/fiscal';
+import { hasPermission } from '@/lib/permissions';
 import { cancelSale, getSale, SaleStatus, type Sale } from '@/lib/sales';
 
 export function SaleDetail({ saleId }: { saleId: string }) {
@@ -26,6 +28,7 @@ export function SaleDetail({ saleId }: { saleId: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [creatingDocument, setCreatingDocument] =
     useState<InternalDocumentType | null>(null);
+  const [creatingFiscal, setCreatingFiscal] = useState(false);
   const [error, setError] = useState('');
 
   const canView = [
@@ -36,6 +39,7 @@ export function SaleDetail({ saleId }: { saleId: string }) {
     'ACCOUNTING',
   ].includes(user?.role.code ?? '');
   const canCancel = ['OWNER', 'ADMIN'].includes(user?.role.code ?? '');
+  const canCreateFiscal = hasPermission(user, 'fiscal.documents.create');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -105,6 +109,24 @@ export function SaleDetail({ saleId }: { saleId: string }) {
       );
     } finally {
       setCreatingDocument(null);
+    }
+  }
+
+  async function createFiscalDraft() {
+    if (!sale) return;
+    setCreatingFiscal(true);
+    setError('');
+    try {
+      const invoice = await createElectronicInvoiceFromSale(sale.id);
+      router.push(`/fiscal/electronic-invoices/${invoice.id}`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No tienes permiso para realizar esta accion.',
+      );
+    } finally {
+      setCreatingFiscal(false);
     }
   }
 
@@ -303,6 +325,18 @@ export function SaleDetail({ saleId }: { saleId: string }) {
                   >
                     Ver documentos internos
                   </Link>
+                  {canCreateFiscal && (
+                    <Button
+                      disabled={creatingFiscal}
+                      onClick={() => void createFiscalDraft()}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {creatingFiscal
+                        ? 'Generando...'
+                        : 'Crear e-CF mock desde venta'}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

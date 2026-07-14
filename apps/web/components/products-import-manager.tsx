@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { hasPermission } from '@/lib/permissions';
 import {
   commitProductImport,
   downloadProductImportTemplate,
@@ -24,6 +25,7 @@ export function ProductsImportManager() {
   const [result, setResult] = useState<ProductImportCommitResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const canImport = hasPermission(user, 'products.import');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -87,6 +89,21 @@ export function ProductsImportManager() {
   if (authLoading) {
     return (
       <main className="grid min-h-screen place-items-center">Cargando...</main>
+    );
+  }
+
+  if (!canImport) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 px-5 text-center">
+        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-950">
+            Importar productos
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            No tienes permiso para realizar esta accion.
+          </p>
+        </div>
+      </main>
     );
   }
 

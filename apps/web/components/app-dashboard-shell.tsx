@@ -11,46 +11,209 @@ import {
   type ReactNode,
 } from 'react';
 
-import { useAuth } from '@/components/auth-provider';
+import { useAuth, type AuthUser } from '@/components/auth-provider';
 import { getStoredActiveBranchId, storeActiveBranchId } from '@/lib/api';
 import { listAvailableBranches, type AvailableBranch } from '@/lib/branches';
+import { hasAnyPermission, hasPermission } from '@/lib/permissions';
 
 const navGroups = [
   {
     label: 'Operacion',
     items: [
       { href: '/dashboard', label: 'Panel', marker: 'PA' },
-      { href: '/pos', label: 'POS', marker: 'PO' },
-      { href: '/sales', label: 'Ventas', marker: 'VE' },
-      { href: '/cash', label: 'Caja', marker: 'CJ' },
+      { href: '/pos', label: 'POS', marker: 'PO', permissions: ['pos.access'] },
+      {
+        href: '/sales',
+        label: 'Ventas',
+        marker: 'VE',
+        permissions: ['sales.view'],
+      },
+      {
+        href: '/cash',
+        label: 'Caja',
+        marker: 'CJ',
+        permissions: ['cash.view'],
+      },
+    ],
+  },
+  {
+    label: 'Inventario',
+    items: [
+      {
+        href: '/inventory',
+        label: 'Inventario',
+        marker: 'IN',
+        permissions: ['inventory.view'],
+      },
+      {
+        href: '/inventory/low-stock',
+        label: 'Bajo stock',
+        marker: 'BS',
+        permissions: ['inventory.view_low_stock'],
+      },
+      {
+        href: '/inventory/transfers',
+        label: 'Transferencias',
+        marker: 'TR',
+        permissions: ['inventory.transfer'],
+      },
+    ],
+  },
+  {
+    label: 'Catalogo',
+    items: [
+      {
+        href: '/catalog/products',
+        label: 'Productos',
+        marker: 'PR',
+        permissions: ['products.view'],
+      },
+      {
+        href: '/catalog/services',
+        label: 'Servicios',
+        marker: 'SV',
+        permissions: ['services.view'],
+      },
+      {
+        href: '/catalog/categories',
+        label: 'Categorias',
+        marker: 'CT',
+        permissions: ['categories.view'],
+      },
+      {
+        href: '/catalog/brands',
+        label: 'Marcas',
+        marker: 'MA',
+        permissions: ['brands.view'],
+      },
+      {
+        href: '/catalog/units',
+        label: 'Unidades',
+        marker: 'UN',
+        permissions: ['units.view'],
+      },
+      {
+        href: '/catalog/products/import',
+        label: 'Importar Excel',
+        marker: 'IM',
+        permissions: ['products.import'],
+      },
+      {
+        href: '/catalog/compatibility',
+        label: 'Compatibilidad',
+        marker: 'CP',
+        permissions: ['product_compatibility.view'],
+      },
     ],
   },
   {
     label: 'Administracion',
     items: [
-      { href: '/customers', label: 'Clientes', marker: 'CL' },
-      { href: '/catalog/products', label: 'Catalogo', marker: 'CA' },
-      { href: '/inventory', label: 'Inventario', marker: 'IN' },
-      { href: '/internal-documents', label: 'Docs internos', marker: 'DI' },
-      { href: '/data-export', label: 'Exportar datos', marker: 'EX' },
-      { href: '/settings/business', label: 'Configuracion', marker: 'CO' },
-      { href: '/settings/branches', label: 'Sucursales', marker: 'SU' },
+      {
+        href: '/customers',
+        label: 'Clientes',
+        marker: 'CL',
+        permissions: ['customers.view'],
+      },
+      {
+        href: '/internal-documents',
+        label: 'Docs internos',
+        marker: 'DI',
+        permissions: ['internal_documents.view'],
+      },
     ],
   },
   {
     label: 'Analitica',
     items: [
-      { href: '/reports', label: 'Reportes', marker: 'RE' },
+      {
+        href: '/reports',
+        label: 'Reportes',
+        marker: 'RE',
+        permissions: ['reports.view'],
+      },
+      {
+        href: '/reports/sales',
+        label: 'Reporte ventas',
+        marker: 'RV',
+        permissions: ['reports.sales'],
+      },
+      {
+        href: '/reports/cash',
+        label: 'Reporte caja',
+        marker: 'RC',
+        permissions: ['reports.cash'],
+      },
+      {
+        href: '/reports/inventory',
+        label: 'Reporte inventario',
+        marker: 'RI',
+        permissions: ['reports.inventory'],
+      },
+      {
+        href: '/reports/customers',
+        label: 'Reporte clientes',
+        marker: 'RL',
+        permissions: ['reports.customers'],
+      },
+      {
+        href: '/reports/documents',
+        label: 'Reporte docs',
+        marker: 'RD',
+        permissions: ['reports.documents'],
+      },
       {
         href: '/financial-dashboard',
         label: 'Dashboard financiero',
         marker: 'FI',
+        permissions: ['financial_dashboard.view'],
+      },
+      {
+        href: '/data-export',
+        label: 'Exportar datos',
+        marker: 'EX',
+        permissions: ['data_export.view'],
+      },
+    ],
+  },
+  {
+    label: 'Configuracion',
+    items: [
+      {
+        href: '/settings/business',
+        label: 'Empresa',
+        marker: 'EM',
+        permissions: ['settings.view'],
+      },
+      {
+        href: '/settings/branches',
+        label: 'Sucursales',
+        marker: 'SU',
+        permissions: ['branches.view'],
+      },
+      {
+        href: '/settings/users',
+        label: 'Usuarios',
+        marker: 'US',
+        permissions: ['users.view'],
+      },
+      {
+        href: '/settings/roles',
+        label: 'Roles',
+        marker: 'RO',
+        permissions: ['roles.view'],
+      },
+      {
+        href: '/fiscal/settings',
+        label: 'Fiscal / e-CF',
+        marker: 'FC',
+        permissions: ['fiscal.settings.view', 'fiscal.documents.view'],
       },
     ],
   },
 ];
 
-const navItems = navGroups.flatMap((group) => group.items);
+type NavItemDefinition = (typeof navGroups)[number]['items'][number];
 
 const dashboardPrefixes = [
   '/dashboard',
@@ -83,30 +246,42 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !usesDashboardShell) return;
     let cancelled = false;
-    void listAvailableBranches()
-      .then((response) => {
-        if (cancelled) return;
-        setBranches(response.items);
-        const stored = getStoredActiveBranchId();
-        const nextBranchId =
-          response.items.find((branch) => branch.id === stored)?.id ??
-          response.activeBranchId ??
-          response.defaultBranchId ??
-          response.items[0]?.id ??
-          null;
-        setActiveBranchId(nextBranchId);
-        if (nextBranchId) storeActiveBranchId(nextBranchId);
-      })
-      .catch(() => {
-        if (!cancelled) setBranches([]);
-      })
-      .finally(() => {
-        if (!cancelled) setBranchesLoading(false);
-      });
+    const loadBranches = () =>
+      void listAvailableBranches()
+        .then((response) => {
+          if (cancelled) return;
+          setBranches(response.items);
+          const stored = getStoredActiveBranchId();
+          const nextBranchId =
+            response.items.find((branch) => branch.id === stored)?.id ??
+            response.activeBranchId ??
+            response.defaultBranchId ??
+            response.items[0]?.id ??
+            null;
+          setActiveBranchId(nextBranchId);
+          if (nextBranchId) storeActiveBranchId(nextBranchId);
+        })
+        .catch(() => {
+          if (!cancelled) setBranches([]);
+        })
+        .finally(() => {
+          if (!cancelled) setBranchesLoading(false);
+        });
+    loadBranches();
+    window.addEventListener('comercia:branches-updated', loadBranches);
     return () => {
       cancelled = true;
+      window.removeEventListener('comercia:branches-updated', loadBranches);
     };
   }, [usesDashboardShell, user]);
+
+  const visibleNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canSeeNavItem(user, item)),
+    }))
+    .filter((group) => group.items.length > 0);
+  const navItems = visibleNavGroups.flatMap((group) => group.items);
 
   const activeBranch = useMemo(
     () => branches.find((branch) => branch.id === activeBranchId) ?? null,
@@ -138,7 +313,7 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="mt-8 grid gap-7">
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label}>
               <p className="px-3 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
                 {group.label}
@@ -406,8 +581,22 @@ function shouldUseDashboardShell(pathname: string) {
   return dashboardPrefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
+function canSeeNavItem(user: AuthUser | null, item: NavItemDefinition) {
+  const permissions = 'permissions' in item ? item.permissions : undefined;
+  if (!permissions?.length) return true;
+  if (permissions.length === 1) {
+    return hasPermission(user, permissions[0]!);
+  }
+  return hasAnyPermission(user, permissions);
+}
+
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard') return pathname === href;
-  if (href === '/catalog/products') return pathname.startsWith('/catalog');
+  if (href === '/catalog/products') {
+    return pathname === href || pathname.startsWith('/catalog/products/');
+  }
+  if (href === '/reports') return pathname === href;
+  if (href === '/settings/business') return pathname === href;
+  if (href === '/fiscal/settings') return pathname.startsWith('/fiscal');
   return pathname === href || pathname.startsWith(`${href}/`);
 }

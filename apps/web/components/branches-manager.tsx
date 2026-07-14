@@ -6,15 +6,22 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import {
+  assignBranchUsers,
   createBranch,
   getBranch,
+  listBranchUsers,
   listBranches,
+  removeBranchUser,
   setMainBranch,
   updateBranch,
   updateBranchStatus,
+  type BranchUserMembership,
   type Branch,
   type CreateBranchPayload,
 } from '@/lib/branches';
+import { hasPermission } from '@/lib/permissions';
+import { listCompanyUsers, type CompanyUser } from '@/lib/users';
+import { useAuth } from './auth-provider';
 
 type BranchFormState = CreateBranchPayload & {
   status: Branch['status'];
@@ -216,6 +223,7 @@ export function BranchesList() {
 
 export function BranchFormPage({ branchId }: { branchId?: string }) {
   const router = useRouter();
+  const { user } = useAuth();
   const [form, setForm] = useState<BranchFormState>(emptyForm);
   const [initialStatus, setInitialStatus] = useState<Branch['status'] | null>(
     null,
@@ -223,6 +231,7 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
   const [loading, setLoading] = useState(Boolean(branchId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const canAssignUsers = hasPermission(user, 'branches.assign_users');
 
   useEffect(() => {
     if (!branchId) return;
@@ -405,8 +414,216 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
             </>
           )}
         </form>
+
+        {branchId && canAssignUsers && (
+          <BranchUsersPanel branchId={branchId} currentUserId={user?.id} />
+        )}
       </div>
     </main>
+  );
+}
+
+function BranchUsersPanel({
+  branchId,
+  currentUserId,
+}: {
+  branchId: string;
+  currentUserId?: string;
+}) {
+  const [memberships, setMemberships] = useState<BranchUserMembership[]>([]);
+  const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [defaultUserId, setDefaultUserId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [nextMemberships, nextUsers] = await Promise.all([
+          listBranchUsers(branchId),
+          listCompanyUsers(),
+        ]);
+        if (cancelled) return;
+        setMemberships(nextMemberships);
+        setUsers(nextUsers);
+      } catch (reason) {
+        if (!cancelled) {
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'No se pudo cargar la informacion.',
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId]);
+
+  async function refresh() {
+    const [nextMemberships, nextUsers] = await Promise.all([
+      listBranchUsers(branchId),
+      listCompanyUsers(),
+    ]);
+    setMemberships(nextMemberships);
+    setUsers(nextUsers);
+  }
+
+  async function assign() {
+    if (!selectedUserId) return;
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await assignBranchUsers(branchId, {
+        userIds: [selectedUserId],
+        defaultUserId:
+          defaultUserId === selectedUserId ? selectedUserId : undefined,
+      });
+      await refresh();
+      window.dispatchEvent(new Event('comercia:branches-updated'));
+      setSelectedUserId('');
+      setDefaultUserId('');
+      setMessage(
+        selectedUserId === currentUserId
+          ? 'Usuario asignado. El selector de sucursal se actualizara al recargar.'
+          : 'Usuario asignado a la sucursal.',
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No tienes permiso para realizar esta accion.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(userId: string) {
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await removeBranchUser(branchId, userId);
+      await refresh();
+      window.dispatchEvent(new Event('comercia:branches-updated'));
+      setMessage(
+        userId === currentUserId
+          ? 'Usuario removido. El selector de sucursal se actualizara al recargar.'
+          : 'Usuario removido de la sucursal.',
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No tienes permiso para realizar esta accion.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const assignedIds = new Set(memberships.map((item) => item.user.id));
+  const availableUsers = users.filter((item) => !assignedIds.has(item.id));
+
+  return (
+    <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">
+            Usuarios asignados
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Controla que usuarios pueden operar esta sucursal.
+          </p>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[220px_150px_auto]">
+          <select
+            disabled={saving}
+            value={selectedUserId}
+            onChange={(event) => {
+              setSelectedUserId(event.target.value);
+              setDefaultUserId('');
+            }}
+          >
+            <option value="">Seleccionar usuario</option>
+            {availableUsers.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} / {item.role.name}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm text-slate-600">
+            <input
+              checked={Boolean(defaultUserId)}
+              disabled={!selectedUserId || saving}
+              type="checkbox"
+              onChange={(event) =>
+                setDefaultUserId(event.target.checked ? selectedUserId : '')
+              }
+            />
+            Default
+          </label>
+          <Button
+            disabled={!selectedUserId || saving}
+            onClick={() => void assign()}
+            type="button"
+          >
+            Asignar
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-4 text-sm font-medium text-red-600">{error}</p>
+      )}
+      {message && (
+        <p className="mt-4 text-sm font-medium text-blue-600">{message}</p>
+      )}
+
+      {loading ? (
+        <p className="mt-5 text-sm text-slate-500">Cargando usuarios...</p>
+      ) : (
+        <div className="mt-5 grid gap-3">
+          {memberships.map((item) => (
+            <article
+              className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"
+              key={item.id}
+            >
+              <div>
+                <p className="font-semibold text-slate-950">{item.user.name}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {item.user.email} / {item.user.role.name}
+                  {item.isDefault ? ' / Default' : ''}
+                </p>
+              </div>
+              <Button
+                disabled={saving}
+                onClick={() => void remove(item.user.id)}
+                type="button"
+                variant="secondary"
+              >
+                Quitar
+              </Button>
+            </article>
+          ))}
+          {!memberships.length && (
+            <p className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+              No hay datos disponibles.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

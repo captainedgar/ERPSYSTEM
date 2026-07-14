@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { hasPermission } from '@/lib/permissions';
 import {
   downloadDataExport,
   type DataExportKind,
@@ -16,56 +17,67 @@ const exportCards: Array<{
   title: string;
   kind: DataExportKind;
   description: string;
+  permission: string;
 }> = [
   {
     title: 'Productos',
     kind: 'products',
     description: 'Catalogo, precios, codigos, compatibilidad y sustitutos.',
+    permission: 'data_export.products',
   },
   {
     title: 'Inventario',
     kind: 'inventory',
     description: 'Stock operativo por sucursal desde inventario real.',
+    permission: 'data_export.inventory',
   },
   {
     title: 'Clientes',
     kind: 'customers',
     description: 'Datos comerciales y de credito sin informacion sensible.',
+    permission: 'data_export.customers',
   },
   {
     title: 'Ventas',
     kind: 'sales',
     description: 'Resumen de ventas por rango, sucursal, cliente y pagos.',
+    permission: 'data_export.sales',
   },
   {
     title: 'Detalle ventas',
     kind: 'sales/items',
     description: 'Lineas vendidas con cantidades, precios, ITBIS y total.',
+    permission: 'data_export.sales',
   },
   {
     title: 'Caja',
     kind: 'cash',
     description: 'Sesiones, apertura, cierre, esperado y diferencia.',
+    permission: 'data_export.cash',
   },
   {
     title: 'Movimientos',
     kind: 'inventory-movements',
     description: 'Entradas, salidas, ajustes y referencias de inventario.',
+    permission: 'data_export.inventory',
   },
   {
     title: 'Transferencias',
     kind: 'inventory-transfers',
     description: 'Movimientos entre sucursales con origen, destino y usuario.',
+    permission: 'data_export.inventory',
   },
   {
     title: 'Docs internos',
     kind: 'internal-documents',
     description: 'Recibos, facturas internas y documentos relacionados.',
+    permission: 'data_export.documents',
   },
   {
     title: 'Resumen reportes',
     kind: 'reports/overview',
     description: 'Totales operativos del rango seleccionado.',
+    permission: 'data_export.view',
   },
 ];
 
@@ -176,32 +188,34 @@ export function DataExportManager() {
         </section>
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {exportCards.map((card) => (
-            <article
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              key={card.kind}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold">{card.title}</h2>
-                  <p className="mt-2 text-sm text-slate-500">
-                    {card.description}
-                  </p>
-                </div>
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                  {format.toUpperCase()}
-                </span>
-              </div>
-              <Button
-                className="mt-5 w-full"
-                disabled={running !== null}
-                onClick={() => void download(card.kind)}
-                type="button"
+          {exportCards.map((card) =>
+            hasPermission(user, card.permission) ? (
+              <article
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                key={card.kind}
               >
-                {running === card.kind ? 'Generando...' : 'Descargar'}
-              </Button>
-            </article>
-          ))}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">{card.title}</h2>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {card.description}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    {format.toUpperCase()}
+                  </span>
+                </div>
+                <Button
+                  className="mt-5 w-full"
+                  disabled={running !== null}
+                  onClick={() => void download(card.kind)}
+                  type="button"
+                >
+                  {running === card.kind ? 'Generando...' : 'Descargar'}
+                </Button>
+              </article>
+            ) : null,
+          )}
         </section>
 
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -213,7 +227,10 @@ export function DataExportManager() {
               </p>
             </div>
             <Button
-              disabled={running !== null}
+              disabled={
+                running !== null ||
+                !hasPermission(user, 'data_export.full_backup')
+              }
               onClick={() => void download('backup')}
               type="button"
             >
