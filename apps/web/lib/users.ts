@@ -22,6 +22,7 @@ export interface CompanyRole {
   code: string;
   name: string;
   description: string | null;
+  rolePermissions: Array<{ permission: { code: string } }>;
 }
 
 export interface CreateCompanyUserPayload {

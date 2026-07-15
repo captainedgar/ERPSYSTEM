@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { hasPermission } from '@/lib/permissions';
 import {
   applyBusinessTemplate,
   BusinessType,
@@ -169,6 +170,31 @@ export function BusinessSettingsForm({
   const selectedTemplate = templates.find(
     ({ id }) => id === settings.businessType,
   );
+  const administrationLinks = [
+    {
+      href: '/settings/users',
+      label: 'Usuarios',
+      description: 'Administra accesos, roles y sucursales asignadas.',
+      visible: [
+        'users.view',
+        'users.create',
+        'users.update',
+        'users.disable',
+      ].some((permission) => hasPermission(user, permission)),
+    },
+    {
+      href: '/settings/branches',
+      label: 'Sucursales',
+      description: 'Configura locales y su disponibilidad operativa.',
+      visible: hasPermission(user, 'branches.view'),
+    },
+    {
+      href: '/settings/roles',
+      label: 'Roles y permisos',
+      description: 'Consulta los roles predefinidos y sus permisos efectivos.',
+      visible: hasPermission(user, 'roles.view'),
+    },
+  ].filter(({ visible }) => visible);
 
   return (
     <main className="min-h-screen px-6 py-8">
@@ -232,6 +258,31 @@ export function BusinessSettingsForm({
             Aplicar plantilla recomendada
           </Button>
         </section>
+
+        {administrationLinks.length > 0 && (
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
+            <h2 className="text-xl font-semibold">
+              Administracion de la empresa
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Accesos disponibles segun tus permisos efectivos.
+            </p>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {administrationLinks.map(({ description, href, label }) => (
+                <Link
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-300 hover:bg-blue-50"
+                  href={href}
+                  key={href}
+                >
+                  <span className="font-semibold text-slate-950">{label}</span>
+                  <span className="mt-1 block text-sm text-slate-600">
+                    {description}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
           <h2 className="text-xl font-semibold">Impuestos y documentos</h2>

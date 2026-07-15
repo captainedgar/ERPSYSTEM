@@ -34,6 +34,18 @@ const navGroups = [
         marker: 'CJ',
         permissions: ['cash.view'],
       },
+      {
+        href: '/customers',
+        label: 'Clientes',
+        marker: 'CL',
+        permissions: ['customers.view'],
+      },
+      {
+        href: '/internal-documents',
+        label: 'Docs internos',
+        marker: 'DI',
+        permissions: ['internal_documents.view'],
+      },
     ],
   },
   {
@@ -69,6 +81,18 @@ const navGroups = [
         permissions: ['products.view'],
       },
       {
+        href: '/catalog/products/import',
+        label: 'Importar Excel',
+        marker: 'IM',
+        permissions: ['products.import'],
+      },
+      {
+        href: '/catalog/compatibility',
+        label: 'Compatibilidad',
+        marker: 'CP',
+        permissions: ['product_compatibility.view'],
+      },
+      {
         href: '/catalog/services',
         label: 'Servicios',
         marker: 'SV',
@@ -92,40 +116,34 @@ const navGroups = [
         marker: 'UN',
         permissions: ['units.view'],
       },
-      {
-        href: '/catalog/products/import',
-        label: 'Importar Excel',
-        marker: 'IM',
-        permissions: ['products.import'],
-      },
-      {
-        href: '/catalog/compatibility',
-        label: 'Compatibilidad',
-        marker: 'CP',
-        permissions: ['product_compatibility.view'],
-      },
     ],
   },
   {
-    label: 'Administracion',
+    label: 'Fiscal',
     items: [
       {
-        href: '/customers',
-        label: 'Clientes',
-        marker: 'CL',
-        permissions: ['customers.view'],
+        href: '/fiscal/settings',
+        label: 'Configuracion fiscal',
+        marker: 'FC',
+        permissions: ['fiscal.settings.view'],
       },
       {
-        href: '/internal-documents',
-        label: 'Docs internos',
-        marker: 'DI',
-        permissions: ['internal_documents.view'],
+        href: '/fiscal/electronic-invoices',
+        label: 'Comprobantes e-CF',
+        marker: 'EC',
+        permissions: ['fiscal.documents.view'],
       },
     ],
   },
   {
     label: 'Analitica',
     items: [
+      {
+        href: '/financial-dashboard',
+        label: 'Dashboard financiero',
+        marker: 'FI',
+        permissions: ['financial_dashboard.view'],
+      },
       {
         href: '/reports',
         label: 'Reportes',
@@ -163,12 +181,6 @@ const navGroups = [
         permissions: ['reports.documents'],
       },
       {
-        href: '/financial-dashboard',
-        label: 'Dashboard financiero',
-        marker: 'FI',
-        permissions: ['financial_dashboard.view'],
-      },
-      {
         href: '/data-export',
         label: 'Exportar datos',
         marker: 'EX',
@@ -195,19 +207,18 @@ const navGroups = [
         href: '/settings/users',
         label: 'Usuarios',
         marker: 'US',
-        permissions: ['users.view'],
+        permissions: [
+          'users.view',
+          'users.create',
+          'users.update',
+          'users.disable',
+        ],
       },
       {
         href: '/settings/roles',
         label: 'Roles',
         marker: 'RO',
         permissions: ['roles.view'],
-      },
-      {
-        href: '/fiscal/settings',
-        label: 'Fiscal / e-CF',
-        marker: 'FC',
-        permissions: ['fiscal.settings.view', 'fiscal.documents.view'],
       },
     ],
   },
@@ -302,7 +313,7 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 overflow-hidden border-r border-slate-200 bg-white px-6 py-6 shadow-sm lg:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col overflow-hidden border-r border-slate-200 bg-white px-6 py-6 shadow-sm lg:flex">
         <Link href="/dashboard" className="block min-w-0">
           <p className="truncate text-sm font-semibold text-blue-700">
             Comercia ERP
@@ -312,7 +323,7 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
           </h1>
         </Link>
 
-        <nav className="mt-8 grid gap-7">
+        <nav className="mt-8 grid min-h-0 flex-1 gap-7 overflow-y-auto pr-1 pb-4">
           {visibleNavGroups.map((group) => (
             <div key={group.label}>
               <p className="px-3 text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
@@ -332,18 +343,6 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-
-        <div className="absolute right-5 bottom-5 left-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-            Empresa activa
-          </p>
-          <p className="mt-2 truncate text-sm font-semibold text-slate-950">
-            {user?.company.name ?? 'Sin empresa'}
-          </p>
-          <p className="mt-1 truncate text-xs text-slate-500">
-            {activeBranch?.name ?? user?.branch?.name ?? 'Sucursal principal'}
-          </p>
-        </div>
       </aside>
 
       <div className="lg:pl-72">
@@ -358,6 +357,15 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
               </h2>
             </div>
             <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:gap-4 sm:border-0 sm:bg-transparent sm:p-0">
+              <div className="min-w-0 sm:max-w-48">
+                <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                  Empresa activa
+                </p>
+                <p className="truncate text-sm font-medium text-slate-700">
+                  {user?.company.name ?? 'Sin empresa'}
+                </p>
+              </div>
+              <span className="hidden text-slate-300 sm:block">/</span>
               <BranchSelector
                 activeBranch={activeBranch}
                 activeBranchId={activeBranchId}
@@ -593,10 +601,10 @@ function canSeeNavItem(user: AuthUser | null, item: NavItemDefinition) {
 function isActive(pathname: string, href: string) {
   if (href === '/dashboard') return pathname === href;
   if (href === '/catalog/products') {
-    return pathname === href || pathname.startsWith('/catalog/products/');
+    return pathname === href;
   }
   if (href === '/reports') return pathname === href;
   if (href === '/settings/business') return pathname === href;
-  if (href === '/fiscal/settings') return pathname.startsWith('/fiscal');
+  if (href === '/fiscal/settings') return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }

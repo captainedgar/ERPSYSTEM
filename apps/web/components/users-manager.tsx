@@ -127,7 +127,7 @@ export function UsersManager() {
               className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
               href="/settings/users/new"
             >
-              Crear usuario
+              Nuevo usuario
             </Link>
           )}
         </header>
@@ -495,9 +495,24 @@ export function RolesManager() {
                 {role.description ?? 'Rol base de la empresa.'}
               </p>
               <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-                Los permisos efectivos se aplican en backend. La gestion
-                granular queda pendiente si se habilita edicion de roles.
+                Rol predefinido del sistema. La edicion granular no esta
+                disponible en esta fase.
               </p>
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                  {role.rolePermissions.length} permisos efectivos
+                </summary>
+                <ul className="mt-3 grid gap-1 text-xs text-slate-600">
+                  {role.rolePermissions.map(({ permission }) => (
+                    <li
+                      className="rounded-md bg-slate-50 px-2 py-1 font-mono"
+                      key={permission.code}
+                    >
+                      {permission.code}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             </article>
           ))}
         </section>

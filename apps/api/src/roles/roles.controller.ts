@@ -14,7 +14,16 @@ export class RolesController {
   findAll(@CurrentUser() user: AuthUser) {
     return this.prisma.role.findMany({
       where: { companyId: user.companyId, isActive: true },
-      select: { id: true, code: true, name: true, description: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        description: true,
+        rolePermissions: {
+          select: { permission: { select: { code: true } } },
+          orderBy: { permission: { code: 'asc' } },
+        },
+      },
       orderBy: { name: 'asc' },
     });
   }
