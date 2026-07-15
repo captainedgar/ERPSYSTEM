@@ -23,6 +23,7 @@
     "db:clear-sensitive": "npm run db:clear-sensitive --workspace=packages/database",
     "db:seed-platform-admin": "npm run db:seed-platform-admin --workspace=packages/database",
     "db:seed-saas-plans": "npm run db:seed-saas-plans --workspace=packages/database",
+    "db:seed-demo": "npm run db:seed-demo --workspace=packages/database",
     "billing:process-overdue": "npm run billing:process-overdue --workspace=packages/database"
   },
   "engines": {

@@ -239,7 +239,9 @@ export class AuthService {
         code: role.code,
         name: role.name,
       },
-      permissions: role.rolePermissions.map(({ permission }) => permission.code),
+      permissions: role.rolePermissions.map(
+        ({ permission }) => permission.code,
+      ),
     };
   }
 
