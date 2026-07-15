@@ -17,6 +17,7 @@ import {
   updateCustomerStatus,
   type Customer,
 } from '@/lib/customers';
+import { hasPermission } from '@/lib/permissions';
 
 interface FormState {
   id?: string;
@@ -96,12 +97,9 @@ export function CustomersManager() {
   const [message, setMessage] = useState('');
   const limit = 20;
 
-  const role = user?.role.code;
-  const canCreate = ['OWNER', 'ADMIN', 'CASHIER', 'SELLER'].includes(
-    role ?? '',
-  );
-  const canUpdate = ['OWNER', 'ADMIN', 'ACCOUNTING'].includes(role ?? '');
-  const canChangeStatus = ['OWNER', 'ADMIN'].includes(role ?? '');
+  const canCreate = hasPermission(user, 'customers.create');
+  const canUpdate = hasPermission(user, 'customers.update');
+  const canChangeStatus = hasPermission(user, 'customers.change_status');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

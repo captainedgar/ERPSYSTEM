@@ -36,6 +36,7 @@ test('commercial demo seed contains no destructive Prisma operations', async () 
   const source = await readFile(scriptPath, 'utf8');
   assert.doesNotMatch(source, /\.(delete|deleteMany)\s*\(/);
   assert.match(source, /company\.upsert/);
+  assert.match(source, /permission\.upsert/);
   assert.match(source, /productBranchStock\.upsert/);
   assert.match(source, /platformUser\.upsert/);
   assert.match(source, /companyId_branchId_productId/);

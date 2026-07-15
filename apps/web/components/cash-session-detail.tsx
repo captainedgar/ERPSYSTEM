@@ -8,6 +8,7 @@ import { useAuth } from '@/components/auth-provider';
 import { currency } from '@/components/cash-manager';
 import { Status } from '@/components/cash-sessions-manager';
 import { CashMovementType, getCashSession, type CashSession } from '@/lib/cash';
+import { hasPermission } from '@/lib/permissions';
 
 const movementLabels: Record<CashMovementType, string> = {
   OPENING: 'Apertura',
@@ -29,9 +30,7 @@ export function CashSessionDetail({
   const [session, setSession] = useState<CashSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const canView = ['OWNER', 'ADMIN', 'CASHIER', 'ACCOUNTING'].includes(
-    user?.role.code ?? '',
-  );
+  const canView = hasPermission(user, 'cash.view_sessions');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

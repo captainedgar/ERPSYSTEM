@@ -31,14 +31,8 @@ export function SaleDetail({ saleId }: { saleId: string }) {
   const [creatingFiscal, setCreatingFiscal] = useState(false);
   const [error, setError] = useState('');
 
-  const canView = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(user?.role.code ?? '');
-  const canCancel = ['OWNER', 'ADMIN'].includes(user?.role.code ?? '');
+  const canView = hasPermission(user, 'sales.view_detail');
+  const canCancel = hasPermission(user, 'sales.cancel');
   const canCreateFiscal = hasPermission(user, 'fiscal.documents.create');
 
   useEffect(() => {

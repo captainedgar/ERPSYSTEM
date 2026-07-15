@@ -7,6 +7,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import { listSales, SaleStatus, type Sale } from '@/lib/sales';
+import { hasPermission } from '@/lib/permissions';
 
 const limit = 20;
 
@@ -23,13 +24,8 @@ export function SalesManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const canView = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(user?.role.code ?? '');
+  const canView = hasPermission(user, 'sales.view');
+  const canCreate = hasPermission(user, 'sales.create');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -133,7 +129,7 @@ export function SalesManager() {
             </p>
           </div>
           <div className="flex gap-4 text-sm">
-            {user.role.code !== 'ACCOUNTING' && (
+            {canCreate && (
               <Link className="text-blue-600" href="/pos">
                 Nueva venta
               </Link>

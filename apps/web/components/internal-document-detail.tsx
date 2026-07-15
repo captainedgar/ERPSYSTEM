@@ -27,16 +27,8 @@ export function InternalDocumentDetail({ id }: { id: string }) {
   const [creatingFiscal, setCreatingFiscal] = useState(false);
   const [error, setError] = useState('');
 
-  const canView = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(user?.role.code ?? '');
-  const canVoid = ['OWNER', 'ADMIN', 'ACCOUNTING'].includes(
-    user?.role.code ?? '',
-  );
+  const canView = hasPermission(user, 'internal_documents.view');
+  const canVoid = hasPermission(user, 'internal_documents.void');
   const canCreateFiscal = hasPermission(user, 'fiscal.documents.create');
 
   useEffect(() => {

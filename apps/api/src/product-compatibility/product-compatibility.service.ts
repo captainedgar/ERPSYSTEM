@@ -364,12 +364,22 @@ export class ProductCompatibilityService {
       user.companyId,
       productId,
     );
-    const alternatives = await this.collectAlternatives(
-      user.companyId,
-      user.branchId,
-      productId,
-    );
-    return { requestedProduct, alternatives };
+    const [alternatives, stockMap] = await Promise.all([
+      this.collectAlternatives(user.companyId, user.branchId, productId),
+      this.branchInventory.stockMap(
+        this.prisma,
+        user.companyId,
+        user.branchId,
+        [productId],
+      ),
+    ]);
+    return {
+      requestedProduct: {
+        ...requestedProduct,
+        stock: stockMap.get(productId)?.quantity ?? new Prisma.Decimal(0),
+      },
+      alternatives,
+    };
   }
 
   async alternativesByCode(user: AuthUser, query: string) {
@@ -419,7 +429,7 @@ export class ProductCompatibilityService {
           ]
         : [];
     return {
-      requestedProduct: alternativeCode.product,
+      requestedProduct: result.requestedProduct,
       alternatives: [...exactAlternative, ...result.alternatives].filter(
         (item, index, list) =>
           list.findIndex(({ id }) => id === item.id) === index,

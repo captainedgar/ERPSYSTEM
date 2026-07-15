@@ -17,6 +17,7 @@ import {
   InventoryMovementType,
   InventoryTransferStatus,
   PaymentMethod,
+  PermissionAction,
   PlatformRole,
   PlatformUserStatus,
   PrismaClient,
@@ -177,6 +178,38 @@ const limitedPermissions = {
     'financial_dashboard.customers',
   ],
 };
+
+const companyManagementPermissions = [
+  'companies.update',
+  'branches.create',
+  'branches.update',
+  'branches.change_status',
+  'branches.set_main',
+  'branches.assign_users',
+  'users.view',
+  'users.create',
+  'users.update',
+  'users.disable',
+  'roles.view',
+  'settings.view',
+  'settings.update',
+  'categories.disable',
+  'brands.disable',
+  'units.disable',
+  'products.disable',
+  'services.create',
+  'services.update',
+  'services.disable',
+  'sales.cancel',
+  'financial_dashboard.branches',
+];
+
+const basePermissionCodes = [
+  ...new Set([
+    ...Object.values(limitedPermissions).flat(),
+    ...companyManagementPermissions,
+  ]),
+].sort();
 
 const branchesData = [
   [
@@ -587,6 +620,15 @@ async function seedIdentity(tx) {
     });
   }
 
+  for (const code of basePermissionCodes) {
+    const module = code.split('.')[0];
+    const action = permissionAction(code);
+    await tx.permission.upsert({
+      where: { code },
+      update: { module, action },
+      create: { id: id('permission', code), code, module, action },
+    });
+  }
   const permissions = await tx.permission.findMany({
     orderBy: { code: 'asc' },
   });
@@ -672,6 +714,21 @@ async function seedIdentity(tx) {
     }
   }
   return { company, branches, users };
+}
+
+function permissionAction(code) {
+  if (/\.(create|open|import)$/.test(code)) return PermissionAction.CREATE;
+  if (/\.(disable|change_status|cancel|void)$/.test(code)) {
+    return PermissionAction.DISABLE;
+  }
+  if (
+    /\.view($|_)|\.access$|^reports\.|^data_export\.|^financial_dashboard\./.test(
+      code,
+    )
+  ) {
+    return PermissionAction.VIEW;
+  }
+  return PermissionAction.UPDATE;
 }
 
 async function ensureLocalPlatformAdmin(tx) {

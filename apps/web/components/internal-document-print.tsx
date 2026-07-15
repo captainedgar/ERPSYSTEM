@@ -12,6 +12,7 @@ import {
   InternalDocumentType,
   type InternalDocumentPrintData,
 } from '@/lib/internal-documents';
+import { hasPermission } from '@/lib/permissions';
 
 export function InternalDocumentPrint({ id }: { id: string }) {
   const router = useRouter();
@@ -20,13 +21,7 @@ export function InternalDocumentPrint({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const canPrint = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(user?.role.code ?? '');
+  const canPrint = hasPermission(user, 'internal_documents.print');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

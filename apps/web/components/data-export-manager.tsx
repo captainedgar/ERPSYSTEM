@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, hasRole } from '@/lib/permissions';
 import {
   downloadDataExport,
   type DataExportKind,
@@ -163,7 +163,9 @@ export function DataExportManager() {
                 }
               >
                 <option value="active_branch">Sucursal activa</option>
-                <option value="all_branches">Todas las sucursales</option>
+                {hasRole(user, ['OWNER', 'ADMIN']) && (
+                  <option value="all_branches">Todas las sucursales</option>
+                )}
               </select>
             </label>
             <label>
@@ -218,26 +220,25 @@ export function DataExportManager() {
           )}
         </section>
 
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Backup basico</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Genera un XLSX multi-hoja con datos operativos y metadata.
-              </p>
+        {hasPermission(user, 'data_export.full_backup') && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Backup basico</h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Genera un XLSX multi-hoja con datos operativos y metadata.
+                </p>
+              </div>
+              <Button
+                disabled={running !== null}
+                onClick={() => void download('backup')}
+                type="button"
+              >
+                {running === 'backup' ? 'Generando...' : 'Generar backup'}
+              </Button>
             </div>
-            <Button
-              disabled={
-                running !== null ||
-                !hasPermission(user, 'data_export.full_backup')
-              }
-              onClick={() => void download('backup')}
-              type="button"
-            >
-              {running === 'backup' ? 'Generando...' : 'Generar backup'}
-            </Button>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
     </main>
   );

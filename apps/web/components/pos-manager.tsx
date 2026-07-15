@@ -16,6 +16,7 @@ import {
   type PosItem,
 } from '@/lib/pos';
 import { addPosItemToCart, type PosCartLine } from '@/lib/pos-cart';
+import { hasPermission } from '@/lib/permissions';
 import {
   getPosAlternatives,
   getPosAlternativesByCode,
@@ -83,10 +84,7 @@ export function PosManager() {
   );
   const scanInputRef = useRef<HTMLInputElement>(null);
 
-  const role = user?.role.code;
-  const canUsePos = ['OWNER', 'ADMIN', 'CASHIER', 'SELLER'].includes(
-    role ?? '',
-  );
+  const canUsePos = hasPermission(user, 'pos.access');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

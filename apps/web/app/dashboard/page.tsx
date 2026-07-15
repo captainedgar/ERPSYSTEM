@@ -9,11 +9,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { getStoredActiveBranchId } from '@/lib/api';
 import { listAvailableBranches, type AvailableBranch } from '@/lib/branches';
-
-const roleAccess = {
-  canSell: ['OWNER', 'ADMIN', 'CASHIER', 'SELLER'],
-  canReviewMoney: ['OWNER', 'ADMIN', 'CASHIER', 'SELLER', 'ACCOUNTING'],
-};
+import { hasPermission } from '@/lib/permissions';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -70,42 +66,42 @@ export default function DashboardPage() {
       label: 'Abrir POS',
       description: 'Iniciar ventas desde caja o mostrador.',
       marker: 'PO',
-      enabled: roleAccess.canSell.includes(user.role.code),
+      enabled: hasPermission(user, 'pos.access'),
     },
     {
       href: '/sales',
       label: 'Revisar ventas',
       description: 'Consultar documentos y actividad comercial.',
       marker: 'VE',
-      enabled: roleAccess.canReviewMoney.includes(user.role.code),
+      enabled: hasPermission(user, 'sales.view'),
     },
     {
       href: '/cash',
       label: 'Control de caja',
       description: 'Ver movimientos y cierres operativos.',
       marker: 'CJ',
-      enabled: roleAccess.canReviewMoney.includes(user.role.code),
+      enabled: hasPermission(user, 'cash.view'),
     },
     {
       href: '/customers',
       label: 'Clientes',
       description: 'Administrar contactos comerciales.',
       marker: 'CL',
-      enabled: user.role.code !== 'WAREHOUSE',
+      enabled: hasPermission(user, 'customers.view'),
     },
     {
       href: '/catalog/products',
       label: 'Catalogo',
       description: 'Mantener productos y precios al dia.',
       marker: 'CA',
-      enabled: true,
+      enabled: hasPermission(user, 'products.view'),
     },
     {
       href: '/inventory',
       label: 'Inventario',
       description: 'Supervisar existencias y disponibilidad.',
       marker: 'IN',
-      enabled: true,
+      enabled: hasPermission(user, 'inventory.view'),
     },
   ].filter((action) => action.enabled);
 
@@ -113,7 +109,7 @@ export default function DashboardPage() {
     availableBranches.find((branch) => branch.id === activeBranchId) ??
     availableBranches.find((branch) => branch.id === user.branch?.id) ??
     null;
-  const canManageBranches = ['OWNER', 'ADMIN'].includes(user.role.code);
+  const canManageBranches = hasPermission(user, 'branches.update');
 
   const metrics = [
     {

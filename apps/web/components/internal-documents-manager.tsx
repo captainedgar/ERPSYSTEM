@@ -13,6 +13,7 @@ import {
   listInternalDocuments,
   type InternalDocument,
 } from '@/lib/internal-documents';
+import { hasPermission } from '@/lib/permissions';
 
 const limit = 20;
 
@@ -29,13 +30,7 @@ export function InternalDocumentsManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const canView = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(user?.role.code ?? '');
+  const canView = hasPermission(user, 'internal_documents.view');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

@@ -5033,6 +5033,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       warehouseSession.accessToken,
     );
     const byProduct = await http<{
+      requestedProduct: { id: string; stock: string };
       alternatives: Array<{ id: string; stock: string; reason: string }>;
     }>(
       'GET',
@@ -5041,7 +5042,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       cashierSession.accessToken,
     );
     const byCode = await http<{
-      requestedProduct: { id: string } | null;
+      requestedProduct: { id: string; stock: string } | null;
       alternatives: Array<{ id: string; stock: string }>;
     }>(
       'GET',
@@ -5069,11 +5070,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(cashierManage.status).toBe(403);
     expect(warehouseManage.status).toBe(201);
     expect(byProduct.status).toBe(200);
+    expect(Number(byProduct.body.requestedProduct.stock)).toBe(0);
     expect(byProduct.body.alternatives.map(({ id }) => id)).toEqual([
       substituteProduct.body.id,
     ]);
     expect(byCode.status).toBe(200);
     expect(byCode.body.requestedProduct?.id).toBe(requestedProduct.body.id);
+    expect(Number(byCode.body.requestedProduct?.stock)).toBe(0);
     expect(byCode.body.alternatives.map(({ id }) => id)).toEqual([
       substituteProduct.body.id,
     ]);

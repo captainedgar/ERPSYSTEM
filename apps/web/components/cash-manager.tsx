@@ -15,6 +15,7 @@ import {
   openCashSession,
   type CashSession,
 } from '@/lib/cash';
+import { hasPermission } from '@/lib/permissions';
 
 export function CashManager() {
   const router = useRouter();
@@ -34,18 +35,11 @@ export function CashManager() {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const effectiveBranchId = activeBranchId ?? user?.branch?.id ?? null;
 
-  const role = user?.role.code ?? '';
-  const canView = [
-    'OWNER',
-    'ADMIN',
-    'CASHIER',
-    'SELLER',
-    'ACCOUNTING',
-  ].includes(role);
-  const canOperate = ['OWNER', 'ADMIN', 'CASHIER'].includes(role);
-  const canViewHistory = ['OWNER', 'ADMIN', 'CASHIER', 'ACCOUNTING'].includes(
-    role,
-  );
+  const canView = hasPermission(user, 'cash.view');
+  const canOpen = hasPermission(user, 'cash.open');
+  const canClose = hasPermission(user, 'cash.close');
+  const canMove = hasPermission(user, 'cash.manual_movement');
+  const canViewHistory = hasPermission(user, 'cash.view_sessions');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -234,7 +228,7 @@ export function CashManager() {
             <p className="mt-2 text-slate-500">
               Abre una caja para registrar ventas en efectivo y movimientos.
             </p>
-            {canOperate && effectiveBranchId && (
+            {canOpen && effectiveBranchId && (
               <form
                 className="mt-6 grid max-w-xl gap-4"
                 onSubmit={(event) => void submitOpen(event)}
@@ -267,98 +261,104 @@ export function CashManager() {
         ) : (
           <>
             <CashSummary session={session} />
-            {canOperate && (
+            {(canMove || canClose) && (
               <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <section className="rounded-3xl border border-slate-200 bg-white p-6">
-                  <h2 className="text-xl font-semibold">Movimiento manual</h2>
-                  <form
-                    className="mt-4 grid gap-4"
-                    onSubmit={(event) => void submitMovement(event)}
-                  >
-                    <label>
-                      Tipo
-                      <select
-                        value={movementType}
-                        onChange={(event) =>
-                          setMovementType(event.target.value as 'in' | 'out')
+                {canMove && (
+                  <section className="rounded-3xl border border-slate-200 bg-white p-6">
+                    <h2 className="text-xl font-semibold">Movimiento manual</h2>
+                    <form
+                      className="mt-4 grid gap-4"
+                      onSubmit={(event) => void submitMovement(event)}
+                    >
+                      <label>
+                        Tipo
+                        <select
+                          value={movementType}
+                          onChange={(event) =>
+                            setMovementType(event.target.value as 'in' | 'out')
+                          }
+                        >
+                          <option value="in">Entrada de efectivo</option>
+                          <option value="out">Salida / gasto</option>
+                        </select>
+                      </label>
+                      <label>
+                        Monto
+                        <input
+                          min="0.01"
+                          required
+                          step="0.01"
+                          type="number"
+                          value={movementAmount}
+                          onChange={(event) =>
+                            setMovementAmount(event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Motivo
+                        <input
+                          minLength={3}
+                          required
+                          value={movementReason}
+                          onChange={(event) =>
+                            setMovementReason(event.target.value)
+                          }
+                        />
+                      </label>
+                      <Button
+                        disabled={submitting}
+                        type="submit"
+                        variant={
+                          movementType === 'out' ? 'secondary' : 'primary'
                         }
                       >
-                        <option value="in">Entrada de efectivo</option>
-                        <option value="out">Salida / gasto</option>
-                      </select>
-                    </label>
-                    <label>
-                      Monto
-                      <input
-                        min="0.01"
-                        required
-                        step="0.01"
-                        type="number"
-                        value={movementAmount}
-                        onChange={(event) =>
-                          setMovementAmount(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      Motivo
-                      <input
-                        minLength={3}
-                        required
-                        value={movementReason}
-                        onChange={(event) =>
-                          setMovementReason(event.target.value)
-                        }
-                      />
-                    </label>
-                    <Button
-                      disabled={submitting}
-                      type="submit"
-                      variant={movementType === 'out' ? 'secondary' : 'primary'}
-                    >
-                      Registrar {movementType === 'in' ? 'entrada' : 'salida'}
-                    </Button>
-                  </form>
-                </section>
+                        Registrar {movementType === 'in' ? 'entrada' : 'salida'}
+                      </Button>
+                    </form>
+                  </section>
+                )}
 
-                <section className="rounded-3xl border border-slate-200 bg-white p-6">
-                  <h2 className="text-xl font-semibold">Cerrar caja</h2>
-                  <form
-                    className="mt-4 grid gap-4"
-                    onSubmit={(event) => void submitClose(event)}
-                  >
-                    <label>
-                      Efectivo contado
-                      <input
-                        min="0"
-                        required
-                        step="0.01"
-                        type="number"
-                        value={countedAmount}
-                        onChange={(event) =>
-                          setCountedAmount(event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      Notas del cierre (opcional)
-                      <textarea
-                        rows={3}
-                        value={closingNotes}
-                        onChange={(event) =>
-                          setClosingNotes(event.target.value)
-                        }
-                      />
-                    </label>
-                    <Button
-                      disabled={submitting}
-                      type="submit"
-                      variant="secondary"
+                {canClose && (
+                  <section className="rounded-3xl border border-slate-200 bg-white p-6">
+                    <h2 className="text-xl font-semibold">Cerrar caja</h2>
+                    <form
+                      className="mt-4 grid gap-4"
+                      onSubmit={(event) => void submitClose(event)}
                     >
-                      {submitting ? 'Cerrando…' : 'Cerrar caja'}
-                    </Button>
-                  </form>
-                </section>
+                      <label>
+                        Efectivo contado
+                        <input
+                          min="0"
+                          required
+                          step="0.01"
+                          type="number"
+                          value={countedAmount}
+                          onChange={(event) =>
+                            setCountedAmount(event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Notas del cierre (opcional)
+                        <textarea
+                          rows={3}
+                          value={closingNotes}
+                          onChange={(event) =>
+                            setClosingNotes(event.target.value)
+                          }
+                        />
+                      </label>
+                      <Button
+                        disabled={submitting}
+                        type="submit"
+                        variant="secondary"
+                      >
+                        {submitting ? 'Cerrando…' : 'Cerrar caja'}
+                      </Button>
+                    </form>
+                  </section>
+                )}
               </div>
             )}
           </>

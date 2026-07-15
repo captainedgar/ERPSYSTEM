@@ -12,6 +12,7 @@ import {
   listCashSessions,
   type CashSession,
 } from '@/lib/cash';
+import { hasPermission } from '@/lib/permissions';
 
 const limit = 20;
 
@@ -27,9 +28,7 @@ export function CashSessionsManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const canView = ['OWNER', 'ADMIN', 'CASHIER', 'ACCOUNTING'].includes(
-    user?.role.code ?? '',
-  );
+  const canView = hasPermission(user, 'cash.view_sessions');
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');

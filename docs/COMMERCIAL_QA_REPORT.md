@@ -1,0 +1,165 @@
+# Reporte de QA comercial y hardening técnico
+
+## Resumen ejecutivo
+
+Se ejecutó una revisión comercial sobre la demo local de Comercia ERP. Los flujos de autenticación, sucursales, POS, inventario, ventas, caja, documentos, fiscal mock, reportes, dashboard financiero, exportaciones y Platform Admin respondieron correctamente por API. Se corrigieron dos problemas de alto impacto: la UI todavía autorizaba varias acciones por nombre de rol en vez de permisos efectivos, y el producto solicitado en las alternativas POS mostraba stock global en vez del stock de la sucursal activa.
+
+El build productivo y las pruebas automatizadas cubren las rutas y reglas backend. La inspección visual automatizada quedó limitada porque el navegador integrado no pudo inicializar su conexión; se requiere una última pasada visual humana antes de staging.
+
+## Ambiente probado
+
+- Windows y PowerShell.
+- Node.js del workspace y npm workspaces/Turborepo.
+- PostgreSQL local del proyecto.
+- API local en `http://localhost:3001`.
+- Web local en `http://localhost:3000`.
+- Datos regenerados con `CONFIRM_SEED_DEMO=true`.
+- Fiscal configurado exclusivamente en modo `SANDBOX`/`MOCK`.
+
+## Usuarios demo usados
+
+- `owner@demo.local`
+- `cajero@demo.local`
+- `vendedor@demo.local`
+- `almacen@demo.local`
+- `contabilidad@demo.local`
+- `admin@platform.local`
+
+No se registraron tokens, hashes ni secretos durante la QA.
+
+## Flujos probados
+
+### Autenticación y sesión
+
+- Login empresarial correcto.
+- `/auth/me` devuelve permisos efectivos.
+- Rotación de refresh token correcta.
+- Logout revoca la sesión; el token posterior recibe `401`.
+- Login y sesión de Platform Admin separados de la sesión empresarial.
+
+### Empresa y sucursales
+
+- Se cargaron tres sucursales demo.
+- OWNER pudo consultar SDQ y STI mediante `x-branch-id`.
+- Inventario, caja, ventas, reportes y dashboard reciben el contexto de sucursal activa.
+- El shell de Platform Admin no contiene selector de sucursal empresarial.
+
+### POS, inventario y compatibilidad
+
+- Búsqueda por nombre, SKU y código de barras respondió `200`.
+- `BKR6E` identifica la bujía NGK solicitada.
+- En SDQ el producto solicitado devuelve stock `0`.
+- Se devuelven tres alternativas compatibles con stock en SDQ.
+- Inventario, bajo stock, movimientos y transferencias están protegidos por permisos y `companyId`.
+- Existen dos transferencias demo visibles por API.
+
+### Caja, ventas y documentos
+
+- Caja actual, historial y detalle responden según permisos.
+- Las ventas demo aparecen filtradas por sucursal.
+- Se verificaron ventas con varios medios de pago y una cancelada mediante datos seed/E2E.
+- Documentos internos y fiscal mock se consultan correctamente.
+- Crear, anular, imprimir, enviar o reintentar permanece protegido por su permiso granular.
+
+### Reportes, dashboard y exportaciones
+
+- Reporte general y dashboard financiero respondieron con datos demo.
+- Dashboard global reportó siete ventas completadas y ventas brutas demo visibles.
+- Exportación de productos y backup XLSX respondieron para OWNER.
+- `all_branches` fue rechazado con `403` para roles limitados.
+
+### Platform Admin
+
+- Login, `/platform/auth/me`, métricas, empresas, planes y billing respondieron `200`.
+- Los endpoints Platform Admin usan autenticación independiente.
+
+## Problemas encontrados
+
+1. POS, caja, ventas, clientes y documentos internos usaban listas fijas de roles para decidir acceso o visibilidad, aunque el backend ya usa permisos efectivos.
+2. Data Export mostraba `Todas las sucursales` a roles que el backend rechaza y mostraba el bloque de backup deshabilitado a usuarios sin permiso.
+3. Los accesos rápidos del dashboard se calculaban por rol y no por permisos efectivos.
+4. La respuesta de alternativas POS devolvía `Product.stock` global para `requestedProduct`; en SDQ mostraba `11` aunque `ProductBranchStock` era `0`.
+5. El seed demo dependía de que todos los permisos globales ya existieran. En una base local incompleta, OWNER no recibía permisos de dashboard financiero ni exportación.
+6. No existen rutas dedicadas `/customers/new` y `/customers/[id]`; el CRUD actual está integrado en `/customers`.
+7. La automatización visual no pudo conectarse al navegador integrado del entorno de QA.
+
+## Problemas corregidos
+
+- POS ahora usa `pos.access`.
+- Caja usa por separado `cash.view`, `cash.open`, `cash.close`, `cash.manual_movement` y `cash.view_sessions`.
+- Ventas usa `sales.view`, `sales.create`, `sales.view_detail` y `sales.cancel`.
+- Clientes usa `customers.create`, `customers.update` y `customers.change_status`.
+- Documentos internos usa `internal_documents.view`, `internal_documents.print` e `internal_documents.void`.
+- Dashboard calcula cada acceso rápido con el permiso correspondiente.
+- Data Export oculta el alcance global a roles distintos de OWNER/ADMIN y oculta completamente el backup sin `data_export.full_backup`.
+- El producto solicitado por compatibilidad ahora recibe stock desde `ProductBranchStock` para la sucursal activa.
+- El seed asegura el catálogo base de permisos antes de asignar roles y continúa siendo idempotente y no destructivo.
+- Se agregó cobertura E2E para stock de sucursal en `requestedProduct`, tanto por ID como por código alterno.
+
+## QA de permisos
+
+Resultados representativos:
+
+| Perfil | POS | Inventario | Historial caja | Fiscal settings | Usuarios | Export all branches |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cajero | 200 | 200 | 200 | 403 | 403 | 403 |
+| Vendedor | 200 | 200 | 403 | 403 | 403 | 403 |
+| Almacén | 403 | 200 | 403 | 403 | 403 | 403 |
+| Contabilidad | 403 | 200 | 200 | 200 | 403 | 403 |
+
+Los `403` son respuestas esperadas. Los guards backend siguen siendo la autoridad aunque la UI o una URL se manipulen.
+
+## QA responsive
+
+Se revisó estáticamente la estructura de las pantallas prioritarias:
+
+- Shell empresarial: sidebar solo desde `lg`, navegación horizontal con `overflow-x-auto` en móvil y cabecera flexible.
+- Formularios y cards: uso consistente de grids `sm`, `md`, `lg` y `xl`.
+- Tablas principales: contenedores con scroll horizontal donde corresponde.
+- Selector de sucursal: ancho fluido en móvil, truncado de texto y ancho acotado desde `sm`.
+- Dashboard financiero, reportes, importación y Platform Admin incluyen wrappers para overflow.
+
+Pendiente: validar visualmente 390 px, tablet, laptop y desktop en un navegador operativo.
+
+## Hardening técnico
+
+- `apiRequest` evita `response.json()` para respuestas `204` o vacías.
+- Cargas asíncronas críticas usan cancelación lógica y estados loading/error.
+- Dashboard financiero protege divisiones entre cero.
+- Formato monetario y fechas permanecen centralizados en helpers existentes.
+- TypeScript estricto, lint y build productivo verifican imports y tipos.
+- No se realizó ningún refactor grande.
+
+## Seguridad
+
+- `passwordHash`, `refreshTokenHash` y tokens almacenados no se incluyen en respuestas públicas.
+- Auth empresarial y Platform Auth usan guards y almacenamiento separados.
+- Queries revisadas mantienen filtro por `companyId`.
+- `all_branches` se valida nuevamente en backend y solo admite OWNER/ADMIN.
+- `.env`, `node_modules/`, `.turbo/` y `apps/api/uploads/` están ignorados por Git.
+- El seed no contiene `delete` ni `deleteMany`, se bloquea en producción y solo admite bases locales.
+
+## Problemas pendientes y riesgos conocidos
+
+- Completar QA visual/manual en un navegador operativo, incluyendo consola y tamaños responsive.
+- Decidir si el producto requiere rutas dedicadas para crear/editar clientes o si se mantiene el CRUD en una sola pantalla.
+- Una demo que crea ventas altera el stock; regenerar el seed antes de cada presentación.
+- Las credenciales demo nunca deben habilitarse en producción.
+
+## Checklist para demo
+
+- [ ] Ejecutar el seed demo inmediatamente antes de presentar.
+- [ ] Confirmar API y web locales saludables.
+- [ ] Login OWNER y verificar empresa/sucursal.
+- [ ] Cambiar SDQ → STI y volver a SDQ.
+- [ ] Buscar `BKR6E`, confirmar stock 0 y seleccionar alternativa.
+- [ ] Crear venta y revisar caja/documento.
+- [ ] Mostrar dashboard financiero y reportes.
+- [ ] Descargar una exportación y el backup XLSX.
+- [ ] Mostrar fiscal mock y su aviso no productivo.
+- [ ] Verificar perfiles limitados.
+- [ ] Entrar a Platform Admin con una sesión separada.
+
+## Recomendación antes de staging
+
+Ejecutar una pasada visual humana con el checklist anterior, revisar la consola del navegador y usar credenciales distintas a las de demo. Staging debe tener una base aislada, secretos administrados externamente y el seed demo deshabilitado en producción.
