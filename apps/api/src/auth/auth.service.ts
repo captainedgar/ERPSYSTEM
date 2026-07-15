@@ -39,7 +39,17 @@ const publicUserSelect = {
     },
   },
   lastLoginAt: true,
-  role: { select: { id: true, code: true, name: true } },
+  role: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      rolePermissions: {
+        orderBy: { permission: { code: 'asc' } },
+        select: { permission: { select: { code: true } } },
+      },
+    },
+  },
   branch: { select: { id: true, name: true, code: true } },
 } satisfies Prisma.UserSelect;
 
@@ -210,11 +220,27 @@ export class AuthService {
     return this.findPublicUser(user.userId, user.companyId);
   }
 
-  private findPublicUser(userId: string, companyId: string) {
-    return this.prisma.user.findFirstOrThrow({
-      where: { id: userId, companyId, deletedAt: null },
+  private async findPublicUser(userId: string, companyId: string) {
+    const user = await this.prisma.user.findFirstOrThrow({
+      where: {
+        id: userId,
+        companyId,
+        deletedAt: null,
+        role: { companyId },
+      },
       select: publicUserSelect,
     });
+
+    const { role, ...publicUser } = user;
+    return {
+      ...publicUser,
+      role: {
+        id: role.id,
+        code: role.code,
+        name: role.name,
+      },
+      permissions: role.rolePermissions.map(({ permission }) => permission.code),
+    };
   }
 
   private hashPassword(password: string) {

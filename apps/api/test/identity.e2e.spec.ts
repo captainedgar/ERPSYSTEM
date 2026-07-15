@@ -68,6 +68,7 @@ interface SafeUser {
   };
   role: { id: string; code: UserRole; name: string };
   branch: { id: string; code: string; name: string } | null;
+  permissions: string[];
 }
 
 interface AuthResponse {
@@ -239,6 +240,21 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(authenticated.status).toBe(200);
     expect(authenticated.body.id).toBe(registered.user.id);
     expect(authenticated.body.companyId).toBe(registered.company.id);
+    const expectedPermissions = await prisma.permission.findMany({
+      where: {
+        rolePermissions: {
+          some: {
+            roleId: authenticated.body.role.id,
+            role: { companyId: registered.company.id },
+          },
+        },
+      },
+      orderBy: { code: 'asc' },
+      select: { code: true },
+    });
+    expect(authenticated.body.permissions).toEqual(
+      expectedPermissions.map(({ code }) => code),
+    );
     expectNoSensitiveFields(authenticated.body);
   });
 

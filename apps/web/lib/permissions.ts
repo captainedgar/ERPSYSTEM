@@ -144,11 +144,11 @@ export function hasPermission(
   permission: string,
 ) {
   if (!user) return false;
-  if (user.role.code === 'OWNER' || user.role.code === 'ADMIN') return true;
   const typedUser = user as UserWithPermissions;
-  if (typedUser.permissions?.length) {
+  if (Array.isArray(typedUser.permissions)) {
     return typedUser.permissions.includes(permission);
   }
+  if (user.role.code === 'OWNER' || user.role.code === 'ADMIN') return true;
   return (
     fallbackPermissions[user.role.code as RoleCode]?.includes(permission) ??
     false
