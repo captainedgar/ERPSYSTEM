@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   ['users.update', 'users', PermissionAction.UPDATE],
   ['users.disable', 'users', PermissionAction.DISABLE],
   ['roles.view', 'roles', PermissionAction.VIEW],
+  ['roles.assign', 'roles', PermissionAction.UPDATE],
   ['settings.view', 'settings', PermissionAction.VIEW],
   ['settings.update', 'settings', PermissionAction.UPDATE],
   ['categories.view', 'categories', PermissionAction.VIEW],

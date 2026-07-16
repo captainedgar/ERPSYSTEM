@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { roleAllowsPermission } from './roles.service';
 
 @Controller('roles')
 export class RolesController {
@@ -11,8 +12,8 @@ export class RolesController {
 
   @Get()
   @RequirePermissions('roles.view')
-  findAll(@CurrentUser() user: AuthUser) {
-    return this.prisma.role.findMany({
+  async findAll(@CurrentUser() user: AuthUser) {
+    const roles = await this.prisma.role.findMany({
       where: { companyId: user.companyId, isActive: true },
       select: {
         id: true,
@@ -26,5 +27,11 @@ export class RolesController {
       },
       orderBy: { name: 'asc' },
     });
+    return roles.map((role) => ({
+      ...role,
+      rolePermissions: role.rolePermissions.filter(({ permission }) =>
+        roleAllowsPermission(role.code, permission.code),
+      ),
+    }));
   }
 }

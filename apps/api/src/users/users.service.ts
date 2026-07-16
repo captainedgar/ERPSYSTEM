@@ -12,6 +12,7 @@ import { hash } from 'bcrypt';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { roleAllowsPermission } from '../roles/roles.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
@@ -57,6 +58,10 @@ export class UsersService {
   }
 
   async create(user: AuthUser, dto: CreateUserDto) {
+    await this.assertHasPermission(user, 'roles.assign');
+    if (dto.branchId) {
+      await this.assertHasPermission(user, 'branches.assign_users');
+    }
     const role = await this.validateRelations(
       user.companyId,
       dto.roleId,
@@ -118,13 +123,21 @@ export class UsersService {
   async update(user: AuthUser, id: string, dto: UpdateUserDto) {
     const current = await this.findOne(user, id);
     this.assertCanManageUser(user, current.role.code);
+    if (dto.roleId && dto.roleId !== current.role.id) {
+      await this.assertHasPermission(user, 'roles.assign');
+    }
+    if (dto.branchId && dto.branchId !== current.branchId) {
+      await this.assertHasPermission(user, 'branches.assign_users');
+    }
     if (dto.roleId || dto.branchId) {
       const role = await this.validateRelations(
         user.companyId,
         dto.roleId ?? current.role.id,
         dto.branchId ?? current.branchId ?? undefined,
       );
-      this.assertCanAssignRole(user, role.code);
+      if (dto.roleId && dto.roleId !== current.role.id) {
+        this.assertCanAssignRole(user, role.code);
+      }
       if (id === user.userId && dto.roleId && role.code !== user.roleCode) {
         throw new BadRequestException('You cannot change your own role');
       }
@@ -219,14 +232,32 @@ export class UsersService {
   }
 
   private assertCanAssignRole(user: AuthUser, roleCode: UserRole) {
-    if (roleCode === UserRole.OWNER && user.roleCode !== UserRole.OWNER) {
-      throw new ForbiddenException('Only an owner can assign the owner role');
+    if (roleCode === UserRole.OWNER) {
+      throw new ForbiddenException(
+        'The owner role is reserved for the company founder',
+      );
     }
   }
 
   private assertCanManageUser(user: AuthUser, targetRoleCode: UserRole) {
     if (targetRoleCode === UserRole.OWNER && user.roleCode !== UserRole.OWNER) {
       throw new ForbiddenException('Only an owner can manage another owner');
+    }
+  }
+
+  private async assertHasPermission(user: AuthUser, permission: string) {
+    if (!roleAllowsPermission(user.roleCode, permission)) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+    const assigned = await this.prisma.rolePermission.count({
+      where: {
+        roleId: user.roleId,
+        role: { companyId: user.companyId, isActive: true },
+        permission: { code: permission },
+      },
+    });
+    if (!assigned) {
+      throw new ForbiddenException('Insufficient permissions');
     }
   }
 }

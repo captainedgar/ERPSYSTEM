@@ -163,3 +163,39 @@ Pendiente: validar visualmente 390 px, tablet, laptop y desktop en un navegador 
 ## Recomendación antes de staging
 
 Ejecutar una pasada visual humana con el checklist anterior, revisar la consola del navegador y usar credenciales distintas a las de demo. Staging debe tener una base aislada, secretos administrados externamente y el seed demo deshabilitado en producción.
+# Auditoría de roles y permisos
+
+Fecha: 2026-07-16
+
+## Causa raíz
+
+El seed demo agregaba asociaciones `RolePermission` mediante `upsert`, pero no retiraba permisos que hubieran quedado asignados en ejecuciones o matrices anteriores. Como los guards consultan la base de datos, una asociación histórica como `SELLER -> branches.create` era considerada válida.
+
+## Correcciones
+
+- Se definió una matriz canónica para OWNER, ADMIN, CASHIER, SELLER, WAREHOUSE y ACCOUNTING.
+- Se agregó el permiso real `roles.assign`.
+- `/auth/me` filtra asociaciones incompatibles con el rol predefinido.
+- El guard rechaza permisos incompatibles aunque exista una asociación histórica.
+- El seed agrega la matriz vigente de forma idempotente. Las asociaciones históricas sobrantes quedan neutralizadas por backend sin ejecutar borrados.
+- ADMIN no puede asignar, editar ni degradar OWNER.
+- Se adoptó la política de OWNER único fundador.
+- La UI de sucursales y usuarios oculta acciones según permisos efectivos y jerarquía.
+
+## Resultado por rol
+
+- OWNER: administración empresarial completa y backup.
+- ADMIN: usuarios operativos, roles no OWNER, sucursales y operación diaria; sin backup completo.
+- CASHIER: POS, ventas, caja y consulta operativa; sin administración empresarial.
+- SELLER: POS, ventas y clientes básicos; sin administración de sucursales o usuarios.
+- WAREHOUSE: catálogo operativo, inventario, importación y transferencias; sin usuarios o sucursales administrativas.
+- ACCOUNTING: consulta financiera, administración del sandbox fiscal mock, reportes y exportaciones autorizadas; sin backup o administración empresarial.
+
+## Endpoints sensibles
+
+Se validaron especialmente `/branches`, `/branches/:id`, `/branches/:id/users`, `/users`, `/users/:id`, `/users/:id/status`, `/roles`, inventario, POS y reportes.
+
+## Riesgos pendientes
+
+- Los roles continúan siendo predefinidos; no existe editor de permisos personalizados.
+- Cualquier futura ampliación del catálogo debe actualizar la matriz canónica y este documento.

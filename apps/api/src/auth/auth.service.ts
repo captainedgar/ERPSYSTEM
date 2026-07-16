@@ -14,7 +14,7 @@ import type {
   RequestContext,
 } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
-import { RolesService } from '../roles/roles.service';
+import { roleAllowsPermission, RolesService } from '../roles/roles.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
@@ -239,9 +239,9 @@ export class AuthService {
         code: role.code,
         name: role.name,
       },
-      permissions: role.rolePermissions.map(
-        ({ permission }) => permission.code,
-      ),
+      permissions: role.rolePermissions
+        .map(({ permission }) => permission.code)
+        .filter((permission) => roleAllowsPermission(role.code, permission)),
     };
   }
 

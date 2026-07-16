@@ -45,6 +45,7 @@ export function UsersManager() {
   const [error, setError] = useState('');
   const canView = hasPermission(user, 'users.view');
   const canCreate = hasPermission(user, 'users.create');
+  const canAssignRoles = hasPermission(user, 'roles.assign');
   const canUpdate = hasPermission(user, 'users.update');
   const canDisable = hasPermission(user, 'users.disable');
 
@@ -122,7 +123,7 @@ export function UsersManager() {
               Administra accesos internos sin exponer contrasenas ni tokens.
             </p>
           </div>
-          {canCreate && (
+          {canCreate && canAssignRoles && (
             <Link
               className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
               href="/settings/users/new"
@@ -171,25 +172,30 @@ export function UsersManager() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        {canUpdate && (
-                          <Link
-                            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:border-blue-200 hover:text-blue-700"
-                            href={`/settings/users/${item.id}`}
-                          >
-                            Editar
-                          </Link>
-                        )}
-                        {canDisable && user?.id !== item.id && (
-                          <button
-                            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50"
-                            type="button"
-                            onClick={() => void toggleStatus(item)}
-                          >
-                            {item.status === 'ACTIVE'
-                              ? 'Desactivar'
-                              : 'Activar'}
-                          </button>
-                        )}
+                        {canUpdate &&
+                          (user?.role.code === 'OWNER' ||
+                            item.role.code !== 'OWNER') && (
+                            <Link
+                              className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                              href={`/settings/users/${item.id}`}
+                            >
+                              Editar
+                            </Link>
+                          )}
+                        {canDisable &&
+                          user?.id !== item.id &&
+                          (user?.role.code === 'OWNER' ||
+                            item.role.code !== 'OWNER') && (
+                            <button
+                              className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                              type="button"
+                              onClick={() => void toggleStatus(item)}
+                            >
+                              {item.status === 'ACTIVE'
+                                ? 'Desactivar'
+                                : 'Activar'}
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -225,7 +231,9 @@ export function UserFormPage({ userId }: { userId?: string }) {
   const [error, setError] = useState('');
   const canCreate = hasPermission(user, 'users.create');
   const canUpdate = hasPermission(user, 'users.update');
-  const canUse = userId ? canUpdate : canCreate;
+  const canAssignRoles = hasPermission(user, 'roles.assign');
+  const canAssignBranches = hasPermission(user, 'branches.assign_users');
+  const canUse = userId ? canUpdate : canCreate && canAssignRoles;
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -242,7 +250,7 @@ export function UserFormPage({ userId }: { userId?: string }) {
           userId ? getCompanyUser(userId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
-        setRoles(nextRoles);
+        setRoles(nextRoles.filter((role) => role.code !== 'OWNER'));
         setBranches(nextBranches);
         if (existing) {
           setTargetUser(existing);
@@ -257,7 +265,7 @@ export function UserFormPage({ userId }: { userId?: string }) {
         } else {
           setForm((current) => ({
             ...current,
-            roleId: nextRoles[0]?.id ?? '',
+            roleId: nextRoles.find((role) => role.code !== 'OWNER')?.id ?? '',
             branchId: nextBranches[0]?.id ?? '',
           }));
         }
@@ -286,8 +294,11 @@ export function UserFormPage({ userId }: { userId?: string }) {
         await updateCompanyUser(userId, {
           name: form.name.trim(),
           phone: clean(form.phone),
-          roleId: form.roleId,
-          branchId: clean(form.branchId),
+          roleId:
+            canAssignRoles && targetUser?.role.code !== 'OWNER'
+              ? form.roleId
+              : undefined,
+          branchId: canAssignBranches ? clean(form.branchId) : undefined,
         });
       } else {
         await createCompanyUser({
@@ -373,40 +384,44 @@ export function UserFormPage({ userId }: { userId?: string }) {
             value={form.phone}
             onChange={(value) => setForm({ ...form, phone: value })}
           />
-          <label>
-            Rol
-            <select
-              className="mt-1"
-              required
-              value={form.roleId}
-              onChange={(event) =>
-                setForm({ ...form, roleId: event.target.value })
-              }
-            >
-              {roles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name} / {role.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Sucursal por defecto
-            <select
-              className="mt-1"
-              value={form.branchId}
-              onChange={(event) =>
-                setForm({ ...form, branchId: event.target.value })
-              }
-            >
-              <option value="">Sin sucursal</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {canAssignRoles && targetUser?.role.code !== 'OWNER' && (
+            <label>
+              Rol
+              <select
+                className="mt-1"
+                required
+                value={form.roleId}
+                onChange={(event) =>
+                  setForm({ ...form, roleId: event.target.value })
+                }
+              >
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name} / {role.code}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {canAssignBranches && (
+            <label>
+              Sucursal por defecto
+              <select
+                className="mt-1"
+                value={form.branchId}
+                onChange={(event) =>
+                  setForm({ ...form, branchId: event.target.value })
+                }
+              >
+                <option value="">Sin sucursal</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="flex gap-3 md:col-span-2">
             <Button disabled={saving} type="submit">
               {saving ? 'Guardando...' : 'Guardar usuario'}

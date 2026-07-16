@@ -40,9 +40,14 @@ const emptyForm: BranchFormState = {
 };
 
 export function BranchesList() {
+  const { user } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const canCreate = hasPermission(user, 'branches.create');
+  const canUpdate = hasPermission(user, 'branches.update');
+  const canChangeStatus = hasPermission(user, 'branches.change_status');
+  const canSetMain = hasPermission(user, 'branches.set_main');
 
   async function load() {
     setLoading(true);
@@ -104,12 +109,14 @@ export function BranchesList() {
               Administra las ubicaciones operativas de la empresa.
             </p>
           </div>
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            href="/settings/branches/new"
-          >
-            Crear sucursal
-          </Link>
+          {canCreate && (
+            <Link
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              href="/settings/branches/new"
+            >
+              Crear sucursal
+            </Link>
+          )}
         </header>
 
         {error && (
@@ -168,39 +175,45 @@ export function BranchesList() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          <Link
-                            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:border-blue-200 hover:text-blue-700"
-                            href={`/settings/branches/${branch.id}`}
-                          >
-                            Editar
-                          </Link>
-                          {!branch.isMain && branch.status === 'ACTIVE' && (
+                          {canUpdate && (
+                            <Link
+                              className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                              href={`/settings/branches/${branch.id}`}
+                            >
+                              Editar
+                            </Link>
+                          )}
+                          {canSetMain &&
+                            !branch.isMain &&
+                            branch.status === 'ACTIVE' && (
+                              <button
+                                className="rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50"
+                                type="button"
+                                onClick={() =>
+                                  void run(() => setMainBranch(branch.id))
+                                }
+                              >
+                                Principal
+                              </button>
+                            )}
+                          {canChangeStatus && (
                             <button
-                              className="rounded-lg border border-blue-200 px-3 py-2 font-semibold text-blue-700 hover:bg-blue-50"
+                              className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50"
                               type="button"
                               onClick={() =>
-                                void run(() => setMainBranch(branch.id))
+                                void run(() =>
+                                  updateBranchStatus(
+                                    branch.id,
+                                    branch.status !== 'ACTIVE',
+                                  ),
+                                )
                               }
                             >
-                              Principal
+                              {branch.status === 'ACTIVE'
+                                ? 'Desactivar'
+                                : 'Activar'}
                             </button>
                           )}
-                          <button
-                            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50"
-                            type="button"
-                            onClick={() =>
-                              void run(() =>
-                                updateBranchStatus(
-                                  branch.id,
-                                  branch.status !== 'ACTIVE',
-                                ),
-                              )
-                            }
-                          >
-                            {branch.status === 'ACTIVE'
-                              ? 'Desactivar'
-                              : 'Activar'}
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -231,6 +244,11 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
   const [loading, setLoading] = useState(Boolean(branchId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const canCreate = hasPermission(user, 'branches.create');
+  const canUpdate = hasPermission(user, 'branches.update');
+  const canChangeStatus = hasPermission(user, 'branches.change_status');
+  const canSetMain = hasPermission(user, 'branches.set_main');
+  const canUse = branchId ? canUpdate : canCreate;
   const canAssignUsers = hasPermission(user, 'branches.assign_users');
 
   useEffect(() => {
@@ -298,6 +316,16 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (!canUse) {
+    return (
+      <main className="grid min-h-screen place-items-center px-5 text-center">
+        <p className="text-sm font-medium text-slate-600">
+          No tienes permiso para administrar sucursales.
+        </p>
+      </main>
+    );
   }
 
   return (
@@ -375,6 +403,7 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
               <label className="flex items-center gap-3">
                 <input
                   checked={Boolean(form.isMain)}
+                  disabled={!canSetMain}
                   type="checkbox"
                   onChange={(event) =>
                     setForm({ ...form, isMain: event.target.checked })
@@ -382,7 +411,7 @@ export function BranchFormPage({ branchId }: { branchId?: string }) {
                 />
                 Marcar como principal
               </label>
-              {branchId && (
+              {branchId && canChangeStatus && (
                 <label>
                   Estado
                   <select

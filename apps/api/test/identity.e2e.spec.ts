@@ -371,9 +371,164 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(adminOwnerAttempt.status).toBe(403);
     expect(adminManageOwnerAttempt.status).toBe(403);
     expect(selfRoleAttempt.status).toBe(400);
-    expect(secondOwner.status).toBe(201);
-    expect(secondOwner.body.role.code).toBe(UserRole.OWNER);
+    expect(secondOwner.status).toBe(403);
     expectNoSensitiveFields(secondOwner.body);
+  });
+
+  it('enforces the role matrix and blocks stale administrative permissions', async () => {
+    const registered = await registerCompany('role-matrix');
+    const roles = await getRoles(registered.accessToken);
+    const adminRole = findRole(roles, UserRole.ADMIN);
+    const cashierRole = findRole(roles, UserRole.CASHIER);
+    const sellerRole = findRole(roles, UserRole.SELLER);
+    const warehouseRole = findRole(roles, UserRole.WAREHOUSE);
+    const accountingRole = findRole(roles, UserRole.ACCOUNTING);
+    const ownerRole = findRole(roles, UserRole.OWNER);
+
+    const [admin, cashier, seller, warehouse, accounting] = await Promise.all([
+      createUser(
+        registered.accessToken,
+        adminRole.id,
+        registered.branch.id,
+        'matrix-admin',
+      ),
+      createUser(
+        registered.accessToken,
+        cashierRole.id,
+        registered.branch.id,
+        'matrix-cashier',
+      ),
+      createUser(
+        registered.accessToken,
+        sellerRole.id,
+        registered.branch.id,
+        'matrix-seller',
+      ),
+      createUser(
+        registered.accessToken,
+        warehouseRole.id,
+        registered.branch.id,
+        'matrix-warehouse',
+      ),
+      createUser(
+        registered.accessToken,
+        accountingRole.id,
+        registered.branch.id,
+        'matrix-accounting',
+      ),
+    ]);
+
+    const branchesCreate = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'branches.create' },
+    });
+    await prisma.rolePermission.create({
+      data: {
+        roleId: sellerRole.id,
+        permissionId: branchesCreate.id,
+      },
+    });
+
+    const sessions = await Promise.all(
+      [admin, cashier, seller, warehouse, accounting].map((user) =>
+        login(user.email),
+      ),
+    );
+    const [
+      adminSession,
+      cashierSession,
+      sellerSession,
+      warehouseSession,
+      accountingSession,
+    ] = sessions;
+
+    expect(sellerSession.user.permissions).not.toEqual(
+      expect.arrayContaining([
+        'branches.create',
+        'branches.update',
+        'branches.assign_users',
+        'users.create',
+        'roles.assign',
+      ]),
+    );
+    expect(cashierSession.user.permissions).not.toContain('branches.create');
+    expect(warehouseSession.user.permissions).not.toContain('users.create');
+    expect(accountingSession.user.permissions).not.toContain(
+      'data_export.full_backup',
+    );
+    expect(adminSession.user.permissions).toEqual(
+      expect.arrayContaining([
+        'branches.create',
+        'branches.assign_users',
+        'users.create',
+        'roles.assign',
+      ]),
+    );
+
+    const sellerCreateBranch = await http<unknown>(
+      'POST',
+      '/branches',
+      { name: 'No permitida', code: 'NOSELL' },
+      sellerSession.accessToken,
+    );
+    const cashierCreateUser = await http<unknown>(
+      'POST',
+      '/users',
+      userPayload(sellerRole.id, registered.branch.id, 'cashier-denied'),
+      cashierSession.accessToken,
+    );
+    const warehouseInventory = await http<unknown>(
+      'GET',
+      '/inventory',
+      undefined,
+      warehouseSession.accessToken,
+    );
+    const accountingReports = await http<unknown>(
+      'GET',
+      '/reports/overview',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const sellerPos = await http<unknown>(
+      'GET',
+      '/pos/search-items?search=test',
+      undefined,
+      sellerSession.accessToken,
+    );
+    const adminBranch = await http<Branch>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Administrada', code: 'ADM' },
+      adminSession.accessToken,
+    );
+    const adminSeller = await http<SafeUser>(
+      'POST',
+      '/users',
+      userPayload(sellerRole.id, adminBranch.body.id, 'admin-seller'),
+      adminSession.accessToken,
+    );
+    const adminOwner = await http<unknown>(
+      'POST',
+      '/users',
+      userPayload(ownerRole.id, registered.branch.id, 'admin-owner-denied'),
+      adminSession.accessToken,
+    );
+    const adminDegradeOwner = await http<unknown>(
+      'PATCH',
+      `/users/${registered.user.id}`,
+      { roleId: adminRole.id },
+      adminSession.accessToken,
+    );
+
+    expect(sellerCreateBranch.status).toBe(403);
+    expect(cashierCreateUser.status).toBe(403);
+    expect(warehouseInventory.status).toBe(200);
+    expect(accountingReports.status).toBe(200);
+    expect(sellerPos.status).toBe(200);
+    expect(adminBranch.status).toBe(201);
+    expect(adminSeller.status).toBe(201);
+    expect(adminSeller.body.role.code).toBe(UserRole.SELLER);
+    expect(adminOwner.status).toBe(403);
+    expect(adminDegradeOwner.status).toBe(403);
   });
 
   it('supports listing, reading, updating and disabling company users safely', async () => {

@@ -12,7 +12,100 @@ const ROLE_NAMES: Record<UserRole, string> = {
   ACCOUNTING: 'Contabilidad',
 };
 
-const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
+export const ROLE_PERMISSION_CODES: Record<
+  Exclude<UserRole, 'OWNER'>,
+  readonly string[]
+> = {
+  ADMIN: [
+    'companies.view',
+    'companies.update',
+    'branches.view',
+    'branches.create',
+    'branches.update',
+    'branches.change_status',
+    'branches.set_main',
+    'branches.assign_users',
+    'users.view',
+    'users.create',
+    'users.update',
+    'users.disable',
+    'roles.view',
+    'roles.assign',
+    'settings.view',
+    'settings.update',
+    'categories.view',
+    'categories.create',
+    'categories.update',
+    'categories.disable',
+    'brands.view',
+    'brands.create',
+    'brands.update',
+    'brands.disable',
+    'units.view',
+    'units.create',
+    'units.update',
+    'units.disable',
+    'products.view',
+    'products.create',
+    'products.update',
+    'products.disable',
+    'products.import',
+    'product_compatibility.view',
+    'product_compatibility.manage',
+    'services.view',
+    'services.create',
+    'services.update',
+    'services.disable',
+    'inventory.view',
+    'inventory.adjust',
+    'inventory.transfer',
+    'inventory.view_movements',
+    'inventory.view_low_stock',
+    'customers.view',
+    'customers.create',
+    'customers.update',
+    'customers.change_status',
+    'pos.access',
+    'pos.validate_cart',
+    'sales.view',
+    'sales.create',
+    'sales.cancel',
+    'sales.view_detail',
+    'cash.view',
+    'cash.open',
+    'cash.close',
+    'cash.manual_movement',
+    'cash.view_sessions',
+    'reports.view',
+    'reports.sales',
+    'reports.cash',
+    'reports.inventory',
+    'reports.customers',
+    'reports.documents',
+    'data_export.view',
+    'data_export.products',
+    'data_export.inventory',
+    'data_export.customers',
+    'data_export.sales',
+    'data_export.cash',
+    'data_export.documents',
+    'financial_dashboard.view',
+    'financial_dashboard.sales',
+    'financial_dashboard.cash',
+    'financial_dashboard.inventory',
+    'financial_dashboard.customers',
+    'financial_dashboard.branches',
+    'internal_documents.view',
+    'internal_documents.create',
+    'internal_documents.print',
+    'internal_documents.void',
+    'fiscal.settings.view',
+    'fiscal.providers.view',
+    'fiscal.documents.view',
+    'fiscal.documents.create',
+    'fiscal.documents.view_events',
+    'fiscal.documents.view_errors',
+  ],
   CASHIER: [
     'branches.view',
     'categories.view',
@@ -144,13 +237,27 @@ const LIMITED_PERMISSIONS: Partial<Record<UserRole, string[]>> = {
     'data_export.sales',
     'data_export.cash',
     'data_export.documents',
-    'data_export.full_backup',
     'financial_dashboard.view',
     'financial_dashboard.sales',
     'financial_dashboard.cash',
     'financial_dashboard.customers',
   ],
 };
+
+export function permissionCodesForRole(
+  role: UserRole,
+  allPermissionCodes: readonly string[],
+) {
+  return role === UserRole.OWNER
+    ? [...allPermissionCodes]
+    : [...ROLE_PERMISSION_CODES[role]];
+}
+
+export function roleAllowsPermission(role: UserRole, permission: string) {
+  return (
+    role === UserRole.OWNER || ROLE_PERMISSION_CODES[role].includes(permission)
+  );
+}
 
 @Injectable()
 export class RolesService {
@@ -175,10 +282,10 @@ export class RolesService {
     );
 
     for (const role of roles) {
-      const allowedCodes =
-        role.code === UserRole.OWNER || role.code === UserRole.ADMIN
-          ? permissions.map(({ code }) => code)
-          : (LIMITED_PERMISSIONS[role.code] ?? []);
+      const allowedCodes = permissionCodesForRole(
+        role.code,
+        permissions.map(({ code }) => code),
+      );
       const allowedIds = permissions
         .filter(({ code }) => allowedCodes.includes(code))
         .map(({ id }) => id);

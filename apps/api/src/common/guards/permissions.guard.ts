@@ -10,6 +10,7 @@ import type { Request } from 'express';
 import { REQUIRED_PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import type { AuthUser } from '../interfaces/auth-user.interface';
 import { PrismaService } from '../../prisma/prisma.service';
+import { roleAllowsPermission } from '../../roles/roles.service';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -28,6 +29,14 @@ export class PermissionsGuard implements CanActivate {
     const request = context
       .switchToHttp()
       .getRequest<Request & { user: AuthUser }>();
+    if (
+      required.some(
+        (permission) =>
+          !roleAllowsPermission(request.user.roleCode, permission),
+      )
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
     const count = await this.prisma.rolePermission.count({
       where: {
         roleId: request.user.roleId,

@@ -171,7 +171,6 @@ const limitedPermissions = {
     'data_export.sales',
     'data_export.cash',
     'data_export.documents',
-    'data_export.full_backup',
     'financial_dashboard.view',
     'financial_dashboard.sales',
     'financial_dashboard.cash',
@@ -191,6 +190,7 @@ const companyManagementPermissions = [
   'users.update',
   'users.disable',
   'roles.view',
+  'roles.assign',
   'settings.view',
   'settings.update',
   'categories.disable',
@@ -204,12 +204,30 @@ const companyManagementPermissions = [
   'financial_dashboard.branches',
 ];
 
+const ownerOnlyPermissions = [
+  'data_export.full_backup',
+  'fiscal.settings.update',
+  'fiscal.providers.configure',
+  'fiscal.documents.create',
+  'fiscal.documents.send',
+  'fiscal.documents.retry',
+];
+
 const basePermissionCodes = [
   ...new Set([
     ...Object.values(limitedPermissions).flat(),
     ...companyManagementPermissions,
+    ...ownerOnlyPermissions,
   ]),
 ].sort();
+
+const adminDeniedPermissions = new Set([
+  'data_export.full_backup',
+  'fiscal.settings.update',
+  'fiscal.providers.configure',
+  'fiscal.documents.send',
+  'fiscal.documents.retry',
+]);
 
 const branchesData = [
   [
@@ -646,11 +664,15 @@ async function seedIdentity(tx) {
     });
     roles[code] = role;
     const allowed =
-      code === UserRole.OWNER || code === UserRole.ADMIN
+      code === UserRole.OWNER
         ? permissions
-        : permissions.filter((permission) =>
-            limitedPermissions[code]?.includes(permission.code),
-          );
+        : code === UserRole.ADMIN
+          ? permissions.filter(
+              (permission) => !adminDeniedPermissions.has(permission.code),
+            )
+          : permissions.filter((permission) =>
+              limitedPermissions[code]?.includes(permission.code),
+            );
     for (const permission of allowed) {
       await tx.rolePermission.upsert({
         where: {
