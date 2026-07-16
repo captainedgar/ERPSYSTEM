@@ -3,6 +3,7 @@ import type { Response } from 'express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequirePlanFeature } from '../common/decorators/require-plan-feature.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { DataExportService } from './data-export.service';
 import { DataExportQueryDto } from './dto/data-export-query.dto';
@@ -136,6 +137,7 @@ export class DataExportController {
   }
 
   @Get('backup')
+  @RequirePlanFeature('backup_xlsx')
   @RequirePermissions('data_export.full_backup')
   backup(
     @CurrentUser() user: AuthUser,

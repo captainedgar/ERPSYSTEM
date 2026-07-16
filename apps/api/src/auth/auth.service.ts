@@ -1,10 +1,16 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, UserStatus } from '@prisma/client';
+import {
+  CompanySubscriptionStatus,
+  Currency,
+  Prisma,
+  UserStatus,
+} from '@prisma/client';
 import { compare, hash } from 'bcrypt';
 
 import { AuditService } from '../audit/audit.service';
@@ -17,6 +23,11 @@ import { PERMISSIONS } from '../permissions/permission-definitions';
 import { PrismaService } from '../prisma/prisma.service';
 import { permissionCodesForRole, RolesService } from '../roles/roles.service';
 import { SessionsService } from '../sessions/sessions.service';
+import {
+  planModules,
+  STANDARD_SAAS_PLANS,
+  type SaasPlanCode,
+} from '../company-entitlements/saas-plan-entitlements';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 
@@ -64,6 +75,26 @@ export class AuthService {
     const passwordHash = await this.hashPassword(dto.password);
     try {
       const result = await this.prisma.$transaction(async (tx) => {
+        const planDefinition =
+          STANDARD_SAAS_PLANS[dto.planCode ?? ('BASIC' satisfies SaasPlanCode)];
+        const plan = await tx.saasPlan.upsert({
+          where: { name: planDefinition.name },
+          update: {},
+          create: {
+            name: planDefinition.name,
+            description: planDefinition.description,
+            price: planDefinition.price,
+            currency: Currency.DOP,
+            billingInterval: planDefinition.billingInterval,
+            graceDays: planDefinition.graceDays,
+            maxUsers: planDefinition.maxUsers,
+            maxBranches: planDefinition.maxBranches,
+            modules: planModules(planDefinition),
+          },
+        });
+        if (!plan.isActive) {
+          throw new BadRequestException('El plan seleccionado no esta activo.');
+        }
         const company = await tx.company.create({
           data: {
             name: dto.companyName.trim(),
@@ -129,6 +160,26 @@ export class AuthService {
             userAgent: context.userAgent,
           },
         });
+        const startsAt = new Date();
+        const trialEndsAt = new Date(startsAt);
+        trialEndsAt.setUTCDate(
+          trialEndsAt.getUTCDate() + planDefinition.trialDays,
+        );
+        await tx.companySubscription.create({
+          data: {
+            companyId: company.id,
+            planId: plan.id,
+            status:
+              planDefinition.trialDays > 0
+                ? CompanySubscriptionStatus.TRIAL
+                : CompanySubscriptionStatus.PAYMENT_DUE,
+            startsAt,
+            currentPeriodStart: startsAt,
+            currentPeriodEnd: trialEndsAt,
+            nextPaymentDueAt: trialEndsAt,
+            graceDays: plan.graceDays,
+          },
+        });
         return { company, branch, user };
       });
 
@@ -149,6 +200,35 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  async registrationPlans() {
+    const stored = await this.prisma.saasPlan.findMany({
+      where: {
+        name: {
+          in: Object.values(STANDARD_SAAS_PLANS).map(({ name }) => name),
+        },
+      },
+    });
+    const byName = new Map(stored.map((plan) => [plan.name, plan]));
+    return Object.values(STANDARD_SAAS_PLANS)
+      .filter((plan) => byName.get(plan.name)?.isActive !== false)
+      .map((plan) => {
+        const configured = byName.get(plan.name);
+        return {
+          code: plan.code,
+          name: configured?.name ?? plan.name,
+          description: configured?.description ?? plan.description,
+          price: Number(configured?.price ?? plan.price),
+          billingInterval: configured?.billingInterval ?? plan.billingInterval,
+          trialDays: plan.trialDays,
+          maxUsers: configured?.maxUsers ?? plan.maxUsers,
+          maxBranches: configured?.maxBranches ?? plan.maxBranches,
+          maxProducts: plan.maxProducts,
+          features: plan.features,
+          customLimits: plan.customLimits ?? false,
+        };
+      });
   }
 
   async login(dto: LoginDto, context: RequestContext) {

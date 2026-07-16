@@ -3,13 +3,24 @@
 import { Button } from '@comercia/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth, type AuthUser } from '@/components/auth-provider';
 import { apiRequest, type AuthTokens } from '@/lib/api';
 
 interface RegisterResponse extends AuthTokens {
   user: AuthUser;
+}
+
+interface RegistrationPlan {
+  code: 'BASIC' | 'PRO' | 'PREMIUM' | 'ENTERPRISE';
+  name: string;
+  description: string;
+  price: number;
+  trialDays: number;
+  maxUsers: number | null;
+  maxBranches: number | null;
+  maxProducts: number | null;
 }
 
 const businessTypes = [
@@ -33,6 +44,14 @@ export default function RegisterPage() {
   const { setSession } = useAuth();
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [plans, setPlans] = useState<RegistrationPlan[]>([]);
+  const [planCode, setPlanCode] = useState<RegistrationPlan['code']>('BASIC');
+
+  useEffect(() => {
+    void apiRequest<RegistrationPlan[]>('/auth/registration-plans', {}, false)
+      .then(setPlans)
+      .catch(() => setPlans([]));
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,6 +78,7 @@ export default function RegisterPage() {
             ownerName: data.get('ownerName'),
             ownerEmail: data.get('ownerEmail'),
             password: data.get('password'),
+            planCode,
           }),
         },
         false,
@@ -87,6 +107,44 @@ export default function RegisterPage() {
         <p className="mt-2 text-slate-500">
           Crearemos la sucursal principal y tu usuario propietario.
         </p>
+
+        <h2 className="mt-9 border-b border-slate-200 pb-3 font-semibold">
+          Elige tu plan
+        </h2>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          {plans.map((plan) => (
+            <button
+              className={`rounded-xl border p-4 text-left transition ${
+                planCode === plan.code
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-slate-200 bg-white'
+              }`}
+              key={plan.code}
+              onClick={() => setPlanCode(plan.code)}
+              type="button"
+            >
+              <span className="font-semibold text-slate-950">{plan.name}</span>
+              <span className="mt-1 block text-sm text-slate-600">
+                {plan.description}
+              </span>
+              <span className="mt-3 block text-sm font-medium text-blue-700">
+                {plan.code === 'ENTERPRISE'
+                  ? 'Contactar ventas'
+                  : `RD$ ${plan.price.toLocaleString('es-DO')} / mes`}
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">
+                {plan.maxBranches ?? 'Personalizadas'} sucursales ·{' '}
+                {plan.maxUsers ?? 'Personalizados'} usuarios ·{' '}
+                {plan.maxProducts ?? 'Personalizados'} productos
+              </span>
+            </button>
+          ))}
+          {!plans.length && (
+            <p className="text-sm text-slate-500">
+              Se usara el plan Basico con prueba inicial.
+            </p>
+          )}
+        </div>
 
         <h2 className="mt-9 border-b border-slate-200 pb-3 font-semibold">
           Datos del negocio

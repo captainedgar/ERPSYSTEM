@@ -26,6 +26,9 @@ import {
   ProductSubstituteType,
   SaleItemType,
   SaleStatus,
+  SaasBillingInterval,
+  CompanySubscriptionStatus,
+  Currency,
   TaxpayerType,
   UserRole,
   UserStatus,
@@ -605,6 +608,68 @@ async function ensureLocalPlatformAdmin(tx) {
       passwordHash,
       role: PlatformRole.SUPER_ADMIN,
       status: PlatformUserStatus.ACTIVE,
+    },
+  });
+}
+
+async function ensureDemoSubscription(tx, companyId) {
+  const plan = await tx.saasPlan.upsert({
+    where: { name: 'Premium' },
+    update: {
+      maxUsers: 30,
+      maxBranches: 10,
+      modules: {
+        code: 'PREMIUM',
+        maxProducts: 20000,
+        inventory_transfers: true,
+        product_import: true,
+        product_compatibility: true,
+        fiscal_mock: true,
+        data_export_full: true,
+        backup_xlsx: true,
+        financial_dashboard: true,
+        advanced_reports: true,
+        priority_support: true,
+      },
+    },
+    create: {
+      name: 'Premium',
+      description: 'Operacion avanzada para empresas multi-sucursal.',
+      price: 5000,
+      currency: Currency.DOP,
+      billingInterval: SaasBillingInterval.MONTHLY,
+      graceDays: 10,
+      maxUsers: 30,
+      maxBranches: 10,
+      modules: {
+        code: 'PREMIUM',
+        maxProducts: 20000,
+        inventory_transfers: true,
+        product_import: true,
+        product_compatibility: true,
+        fiscal_mock: true,
+        data_export_full: true,
+        backup_xlsx: true,
+        financial_dashboard: true,
+        advanced_reports: true,
+        priority_support: true,
+      },
+    },
+  });
+  const startsAt = new Date('2026-07-01T00:00:00.000Z');
+  const currentPeriodEnd = new Date('2026-08-01T00:00:00.000Z');
+  await tx.companySubscription.upsert({
+    where: { companyId },
+    update: { planId: plan.id },
+    create: {
+      companyId,
+      planId: plan.id,
+      status: CompanySubscriptionStatus.ACTIVE,
+      startsAt,
+      currentPeriodStart: startsAt,
+      currentPeriodEnd,
+      nextPaymentDueAt: currentPeriodEnd,
+      graceDays: plan.graceDays,
     },
   });
 }
@@ -1502,6 +1567,7 @@ async function main() {
     async (tx) => {
       await ensureLocalPlatformAdmin(tx);
       const { company, branches, users } = await seedIdentity(tx);
+      await ensureDemoSubscription(tx, company.id);
       const products = await seedCatalog(tx, company.id, branches, users.OWNER);
       const customers = await seedCustomers(tx, company.id);
       const sales = await seedSalesAndCash(

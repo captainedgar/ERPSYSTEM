@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequirePlanFeature } from '../common/decorators/require-plan-feature.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AdjustInventoryDto } from './dto/adjust-inventory.dto';
 import { CreateInventoryTransferDto } from './dto/create-inventory-transfer.dto';
@@ -49,18 +50,21 @@ export class InventoryController {
   }
 
   @Get('transfers')
+  @RequirePlanFeature('inventory_transfers')
   @RequirePermissions('inventory.transfer')
   findTransfers(@CurrentUser() user: AuthUser) {
     return this.service.findTransfers(user);
   }
 
   @Get('transfers/:id')
+  @RequirePlanFeature('inventory_transfers')
   @RequirePermissions('inventory.transfer')
   findTransfer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.findTransfer(user, id);
   }
 
   @Post('transfers')
+  @RequirePlanFeature('inventory_transfers')
   @RequirePermissions('inventory.transfer')
   createTransfer(
     @CurrentUser() user: AuthUser,

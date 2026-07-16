@@ -12,6 +12,7 @@ import { hash } from 'bcrypt';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanyEntitlementsService } from '../company-entitlements/company-entitlements.service';
 import { roleAllowsPermission } from '../roles/roles.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -38,6 +39,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly entitlements: CompanyEntitlementsService,
   ) {}
 
   findAll(user: AuthUser) {
@@ -58,6 +60,7 @@ export class UsersService {
   }
 
   async create(user: AuthUser, dto: CreateUserDto) {
+    await this.entitlements.assertLimit(user.companyId, 'users');
     await this.assertHasPermission(user, 'roles.assign');
     if (dto.branchId) {
       await this.assertHasPermission(user, 'branches.assign_users');

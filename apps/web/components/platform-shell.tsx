@@ -18,7 +18,19 @@ import {
   type PlatformUser,
 } from '@/lib/platform';
 
-const nav = [
+interface PlatformNavItem {
+  href: string;
+  label: string;
+  exact?: boolean;
+}
+
+interface PlatformNavSection {
+  label: string;
+  roles?: PlatformUser['role'][];
+  items: PlatformNavItem[];
+}
+
+const nav: PlatformNavSection[] = [
   {
     label: 'Inicio',
     items: [{ href: '/platform/dashboard', label: 'Dashboard' }],

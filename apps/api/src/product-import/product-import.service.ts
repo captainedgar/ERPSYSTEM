@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanyEntitlementsService } from '../company-entitlements/company-entitlements.service';
 import { ProductImportOptionsDto } from './dto/product-import-options.dto';
 import type { UploadedExcelFile } from './product-import.types';
 
@@ -139,6 +140,7 @@ export class ProductImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly entitlements: CompanyEntitlementsService,
   ) {}
 
   async template() {
@@ -183,6 +185,11 @@ export class ProductImportService {
     options: ProductImportOptionsDto,
   ) {
     const preview = await this.buildPreview(user, file, options);
+    await this.entitlements.assertLimit(
+      user.companyId,
+      'products',
+      preview.validRows,
+    );
     await this.audit.create({
       companyId: user.companyId,
       branchId: user.branchId,
@@ -209,6 +216,11 @@ export class ProductImportService {
     }
     const branchId = user.branchId;
     const preview = await this.buildPreview(user, file, options);
+    await this.entitlements.assertLimit(
+      user.companyId,
+      'products',
+      preview.validRows,
+    );
     if (preview.invalidRows > 0) {
       await this.auditFailure(user, preview);
       throw new BadRequestException(

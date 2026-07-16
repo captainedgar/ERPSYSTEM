@@ -15,6 +15,7 @@ import { useAuth, type AuthUser } from '@/components/auth-provider';
 import { getStoredActiveBranchId, storeActiveBranchId } from '@/lib/api';
 import { listAvailableBranches, type AvailableBranch } from '@/lib/branches';
 import { hasAnyPermission, hasPermission } from '@/lib/permissions';
+import { getMyEntitlements } from '@/lib/company-billing';
 
 const navGroups = [
   {
@@ -68,6 +69,7 @@ const navGroups = [
         label: 'Transferencias',
         marker: 'TR',
         permissions: ['inventory.transfer'],
+        feature: 'inventory_transfers',
       },
     ],
   },
@@ -85,12 +87,14 @@ const navGroups = [
         label: 'Importar Excel',
         marker: 'IM',
         permissions: ['products.import'],
+        feature: 'product_import',
       },
       {
         href: '/catalog/compatibility',
         label: 'Compatibilidad',
         marker: 'CP',
         permissions: ['product_compatibility.view'],
+        feature: 'product_compatibility',
       },
       {
         href: '/catalog/services',
@@ -126,12 +130,14 @@ const navGroups = [
         label: 'Configuracion fiscal',
         marker: 'FC',
         permissions: ['fiscal.settings.view'],
+        feature: 'fiscal_mock',
       },
       {
         href: '/fiscal/electronic-invoices',
         label: 'Comprobantes e-CF',
         marker: 'EC',
         permissions: ['fiscal.documents.view'],
+        feature: 'fiscal_mock',
       },
     ],
   },
@@ -143,6 +149,7 @@ const navGroups = [
         label: 'Dashboard financiero',
         marker: 'FI',
         permissions: ['financial_dashboard.view'],
+        feature: 'financial_dashboard',
       },
       {
         href: '/reports',
@@ -220,6 +227,12 @@ const navGroups = [
         marker: 'RO',
         permissions: ['roles.view'],
       },
+      {
+        href: '/settings/billing',
+        label: 'Suscripcion y pagos',
+        marker: 'SP',
+        permissions: ['billing.view'],
+      },
     ],
   },
 ];
@@ -253,6 +266,7 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [switchingBranch, setSwitchingBranch] = useState(false);
+  const [planFeatures, setPlanFeatures] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!user || !usesDashboardShell) return;
@@ -286,10 +300,32 @@ export function AppDashboardShell({ children }: { children: ReactNode }) {
     };
   }, [usesDashboardShell, user]);
 
+  useEffect(() => {
+    if (!user || !usesDashboardShell) return;
+    let cancelled = false;
+    void getMyEntitlements()
+      .then((snapshot) => {
+        if (!cancelled) setPlanFeatures(snapshot.features);
+      })
+      .catch(() => {
+        if (!cancelled) setPlanFeatures([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [usesDashboardShell, user]);
+
   const visibleNavGroups = navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canSeeNavItem(user, item)),
+      items: group.items.filter(
+        (item) =>
+          canSeeNavItem(user, item) &&
+          (!('feature' in item) ||
+            planFeatures === null ||
+            (typeof item.feature === 'string' &&
+              planFeatures.includes(item.feature))),
+      ),
     }))
     .filter((group) => group.items.length > 0);
   const navItems = visibleNavGroups.flatMap((group) => group.items);

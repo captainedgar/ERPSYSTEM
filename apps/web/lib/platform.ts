@@ -117,7 +117,7 @@ export interface SaasPlan {
   graceDays: number;
   maxUsers?: number | null;
   maxBranches?: number | null;
-  modules: Record<string, boolean>;
+  modules: Record<string, boolean | number | string | null>;
   isActive: boolean;
   _count?: { subscriptions?: number };
 }
@@ -355,7 +355,7 @@ export function createSaasPlan(body: {
   graceDays: number;
   maxUsers?: number;
   maxBranches?: number;
-  modules: Record<string, boolean>;
+  modules: Record<string, boolean | number | string | null>;
 }) {
   return platformRequest<SaasPlan>('/platform/plans', {
     method: 'POST',
@@ -376,7 +376,7 @@ export function updateSaasPlan(
     graceDays: number;
     maxUsers: number | null;
     maxBranches: number | null;
-    modules: Record<string, boolean>;
+    modules: Record<string, boolean | number | string | null>;
   }>,
 ) {
   return platformRequest<SaasPlan>(`/platform/plans/${planId}`, {

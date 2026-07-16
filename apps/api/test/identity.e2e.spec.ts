@@ -203,6 +203,143 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(session?.refreshTokenHash).not.toBe(registered.refreshToken);
   });
 
+  it('selects SaaS plans safely and enforces critical entitlements', async () => {
+    const basic = await registerCompany('entitlements-basic', 'BASIC');
+    const basicSubscription =
+      await prisma.companySubscription.findUniqueOrThrow({
+        where: { companyId: basic.company.id },
+        include: { plan: true },
+      });
+    const basicRoles = await getRoles(basic.accessToken);
+    const adminRole = findRole(basicRoles, UserRole.ADMIN);
+    const secondBranch = await http<unknown>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal bloqueada', code: 'B02' },
+      basic.accessToken,
+    );
+    const firstExtraUser = await createUser(
+      basic.accessToken,
+      adminRole.id,
+      basic.branch.id,
+      'basic-user-1',
+    );
+    const secondExtraUser = await createUser(
+      basic.accessToken,
+      adminRole.id,
+      basic.branch.id,
+      'basic-user-2',
+    );
+    const fourthUser = await http<unknown>(
+      'POST',
+      '/users',
+      userPayload(adminRole.id, basic.branch.id, 'basic-user-3'),
+      basic.accessToken,
+    );
+    const basicImport = await http<unknown>(
+      'GET',
+      '/products/import/template',
+      undefined,
+      basic.accessToken,
+    );
+    const basicTransfers = await http<unknown>(
+      'GET',
+      '/inventory/transfers',
+      undefined,
+      basic.accessToken,
+    );
+    const basicEntitlements = await http<{
+      plan: { code: string };
+      limits: { maxBranches: number; maxUsers: number; maxProducts: number };
+      usage: { branches: number; users: number };
+    }>('GET', '/company-billing/entitlements', undefined, basic.accessToken);
+    const planChangeRequest = await http<{ success: boolean }>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PRO' },
+      basic.accessToken,
+    );
+    const subscriptionAfterRequest =
+      await prisma.companySubscription.findUniqueOrThrow({
+        where: { companyId: basic.company.id },
+        include: { plan: true },
+      });
+    const planRequestAudit = await prisma.auditLog.findFirst({
+      where: {
+        companyId: basic.company.id,
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+      },
+    });
+
+    const pro = await registerCompany('entitlements-pro', 'PRO');
+    const proBranch = await http<{ id: string }>(
+      'POST',
+      '/branches',
+      { name: 'Sucursal Pro', code: 'PRO2' },
+      pro.accessToken,
+    );
+    const proImport = await downloadExport(
+      '/products/import/template',
+      pro.accessToken,
+      {},
+    );
+    const proTransfers = await http<unknown>(
+      'GET',
+      '/inventory/transfers',
+      undefined,
+      pro.accessToken,
+    );
+
+    const defaultPlan = await registerCompany('entitlements-default', null);
+    const defaultSubscription =
+      await prisma.companySubscription.findUniqueOrThrow({
+        where: { companyId: defaultPlan.company.id },
+        include: { plan: true },
+      });
+    const manipulated = await http<unknown>('POST', '/auth/register-company', {
+      companyName: 'Empresa manipulada',
+      businessType: 'SMALL_STORE',
+      ownerName: 'Owner manipulado',
+      ownerEmail: 'manipulated-plan@example.test',
+      password: TEST_PASSWORD,
+      planCode: 'BASIC',
+      planId: basicSubscription.planId,
+      price: 1,
+    });
+
+    expect(basicSubscription.plan.name).toBe('Basico');
+    expect(basicSubscription.status).toBe(CompanySubscriptionStatus.TRIAL);
+    expect(secondBranch.status).toBe(409);
+    expect(firstExtraUser.id).toEqual(expect.any(String));
+    expect(secondExtraUser.id).toEqual(expect.any(String));
+    expect(fourthUser.status).toBe(409);
+    expect(basicImport.status).toBe(403);
+    expect(basicTransfers.status).toBe(403);
+    expect(basicEntitlements.status).toBe(200);
+    expect(basicEntitlements.body.plan.code).toBe('BASIC');
+    expect(basicEntitlements.body.limits).toEqual({
+      maxBranches: 1,
+      maxUsers: 3,
+      maxProducts: 500,
+    });
+    expect(basicEntitlements.body.usage).toEqual({
+      branches: 1,
+      users: 3,
+      products: 0,
+    });
+    expect(planChangeRequest.status).toBe(201);
+    expect(planChangeRequest.body.success).toBe(true);
+    expect(subscriptionAfterRequest.plan.name).toBe('Basico');
+    expect(planRequestAudit?.metadataJson).toMatchObject({
+      requestedPlanCode: 'PRO',
+    });
+    expect(proBranch.status).toBe(201);
+    expect(proImport.status).toBe(200);
+    expect(proTransfers.status).toBe(200);
+    expect(defaultSubscription.plan.name).toBe('Basico');
+    expect(manipulated.status).toBe(400);
+  });
+
   it('logs in valid users and rejects invalid credentials', async () => {
     const registered = await registerCompany('login');
     const valid = await http<AuthResponse>('POST', '/auth/login', {
@@ -1045,31 +1182,31 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       company.accessToken,
     );
-    const login = await platformLogin(platformAdmin.email);
+    const platformSession = await platformLogin(platformAdmin.email);
     const supportLogin = await platformLogin(supportAdmin.email);
     const me = await http<PlatformAuthResponse['user']>(
       'GET',
       '/platform/auth/me',
       undefined,
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const companies = await http<Array<{ id: string; name: string }>>(
       'GET',
       '/platform/companies',
       undefined,
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const detail = await http<{ id: string; users?: unknown }>(
       'GET',
       `/platform/companies/${company.company.id}`,
       undefined,
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const users = await http<SafeUser[]>(
       'GET',
       `/platform/companies/${company.company.id}/users`,
       undefined,
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const supportSuspendAttempt = await http<unknown>(
       'PATCH',
@@ -1081,7 +1218,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'PATCH',
       `/platform/companies/${company.company.id}/status`,
       { status: CompanyStatus.SUSPENDED },
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const blockedCompanyRequest = await http<unknown>(
       'GET',
@@ -1093,7 +1230,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'PATCH',
       `/platform/companies/${company.company.id}/status`,
       { status: CompanyStatus.ACTIVE },
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
     const companyRequestAfterReactivate = await http<{ id: string }>(
       'GET',
@@ -1105,11 +1242,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'GET',
       '/platform/audit-logs',
       undefined,
-      login.body.accessToken,
+      platformSession.body.accessToken,
     );
 
     expect(companyTokenAttempt.status).toBe(401);
-    expect(login.status).toBe(201);
+    expect(platformSession.status).toBe(201);
     expect(me.status).toBe(200);
     expect(companies.status).toBe(200);
     expect(companies.body.map(({ id }) => id)).toContain(company.company.id);
@@ -1133,7 +1270,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       ]),
     );
     expectNoSensitiveFields([
-      login.body,
+      platformSession.body,
       me.body,
       companies.body,
       detail.body,
@@ -1324,7 +1461,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
     ]);
     expect(events.body.map(({ type }) => type)).toEqual(
       expect.arrayContaining([
-        'SUBSCRIPTION_CREATED',
+        'PLAN_ASSIGNED',
         'PAYMENT_REGISTERED',
         'NEXT_PAYMENT_DATE_UPDATED',
       ]),
@@ -1341,7 +1478,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         'SAAS_PLAN_UPDATED',
         'SAAS_PLAN_DISABLED',
         'SAAS_PLAN_ENABLED',
-        'COMPANY_SUBSCRIPTION_ASSIGNED',
+        'COMPANY_SUBSCRIPTION_UPDATED',
         'SUBSCRIPTION_PAYMENT_REGISTERED',
       ]),
     );
@@ -1359,6 +1496,30 @@ describe('Identity and multi-company isolation (e2e)', () => {
 
   it('manages internal SaaS subscription invoices and invoice payments', async () => {
     const company = await registerCompany('invoice-company');
+    const roles = await getRoles(company.accessToken);
+    const adminUser = await createUser(
+      company.accessToken,
+      findRole(roles, UserRole.ADMIN).id,
+      company.branch.id,
+      'company-billing-admin',
+    );
+    const accountingUser = await createUser(
+      company.accessToken,
+      findRole(roles, UserRole.ACCOUNTING).id,
+      company.branch.id,
+      'company-billing-accounting',
+    );
+    const sellerUser = await createUser(
+      company.accessToken,
+      findRole(roles, UserRole.SELLER).id,
+      company.branch.id,
+      'company-billing-seller',
+    );
+    const [adminSession, accountingSession, sellerSession] = await Promise.all([
+      login(adminUser.email),
+      login(accountingUser.email),
+      login(sellerUser.email),
+    ]);
     const platformAdmin = await createPlatformUser(
       'platform-invoice-super@example.test',
       PlatformRole.SUPER_ADMIN,
@@ -1367,7 +1528,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'platform-invoice-support@example.test',
       PlatformRole.SUPPORT_ADMIN,
     );
-    const login = await platformLogin(platformAdmin.email);
+    const platformBillingSession = await platformLogin(platformAdmin.email);
     const supportLogin = await platformLogin(supportAdmin.email);
     const plan = await prisma.saasPlan.create({
       data: {
@@ -1379,7 +1540,8 @@ describe('Identity and multi-company isolation (e2e)', () => {
         modules: { pos: true },
       },
     });
-    const subscription = await prisma.companySubscription.create({
+    const subscription = await prisma.companySubscription.update({
+      where: { companyId: company.company.id },
       data: {
         companyId: company.company.id,
         planId: plan.id,
@@ -1419,7 +1581,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         billingPeriodEnd: '2026-08-01',
         dueDate: '2026-08-01',
       },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const secondInvoice = await http<{ id: string; invoiceNumber: string }>(
       'POST',
@@ -1430,7 +1592,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         billingPeriodEnd: '2026-09-01',
         dueDate: '2026-09-01',
       },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const supportLinkAttempt = await http<unknown>(
       'POST',
@@ -1447,13 +1609,71 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'POST',
       `/platform/billing/invoices/${invoice.body.id}/payment-links`,
       { expiresAt: '2026-08-15T00:00:00.000Z' },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const publicLink = await http<{
       token: string;
       status: SubscriptionPaymentLinkStatus;
       invoice: { invoiceNumber: string; balance: string };
     }>('GET', `/pay/invoice/${paymentLink.body.token}`);
+    const ownerSubscription = await http<{ id: string; companyId: string }>(
+      'GET',
+      '/company-billing/subscription',
+      undefined,
+      company.accessToken,
+    );
+    const adminSubscription = await http<{ id: string }>(
+      'GET',
+      '/company-billing/subscription',
+      undefined,
+      adminSession.accessToken,
+    );
+    const accountingInvoices = await http<Array<{ id: string }>>(
+      'GET',
+      '/company-billing/invoices',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const accountingPayments = await http<Array<{ id: string }>>(
+      'GET',
+      '/company-billing/payments',
+      undefined,
+      accountingSession.accessToken,
+    );
+    const sellerBilling = await http<unknown>(
+      'GET',
+      '/company-billing/subscription',
+      undefined,
+      sellerSession.accessToken,
+    );
+    const ownerInvoice = await http<{
+      id: string;
+      paymentLinks: Array<{ token: string }>;
+    }>(
+      'GET',
+      `/company-billing/invoices/${invoice.body.id}`,
+      undefined,
+      company.accessToken,
+    );
+    const ownerPaymentLink = await http<{ token: string }>(
+      'POST',
+      `/company-billing/invoices/${invoice.body.id}/payment-link`,
+      undefined,
+      company.accessToken,
+    );
+    const crossCompany = await registerCompany('invoice-cross-company');
+    const crossCompanyInvoice = await http<unknown>(
+      'GET',
+      `/company-billing/invoices/${invoice.body.id}`,
+      undefined,
+      crossCompany.accessToken,
+    );
+    const clientMarkPaidAttempt = await http<unknown>(
+      'POST',
+      `/company-billing/invoices/${invoice.body.id}/mark-paid`,
+      undefined,
+      company.accessToken,
+    );
     const reportedPayment = await http<{
       report: { id: string; amount: string; reference: string };
       link: { reports: Array<{ id: string }> };
@@ -1464,13 +1684,18 @@ describe('Identity and multi-company isolation (e2e)', () => {
       reference: 'TRX-001',
       notes: 'Transferencia reportada',
     });
+    const invoiceAfterReport =
+      await prisma.subscriptionInvoice.findUniqueOrThrow({
+        where: { id: invoice.body.id },
+        select: { status: true, amountPaid: true },
+      });
     const listedLinks = await http<
       Array<{ id: string; reports: Array<{ reference: string }> }>
     >(
       'GET',
       `/platform/billing/invoices/${invoice.body.id}/payment-links`,
       undefined,
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const cancellableLink = await http<{
       id: string;
@@ -1480,7 +1705,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'POST',
       `/platform/billing/invoices/${invoice.body.id}/payment-links`,
       undefined,
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const cancelledLink = await http<{
       status: SubscriptionPaymentLinkStatus;
@@ -1488,7 +1713,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'POST',
       `/platform/billing/payment-links/${cancellableLink.body.id}/cancel`,
       { reason: 'Prueba de cancelacion' },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const partialPayment = await http<{
       invoice: { status: SubscriptionInvoiceStatus; balance: string };
@@ -1502,7 +1727,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         paidAt: '2026-07-10',
         subscriptionInvoiceId: invoice.body.id,
       },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const finalPayment = await http<{
       invoice: { status: SubscriptionInvoiceStatus; balance: string };
@@ -1516,7 +1741,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
         paidAt: '2026-07-11',
         subscriptionInvoiceId: invoice.body.id,
       },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const paidPublicLink = await http<{
       status: SubscriptionPaymentLinkStatus;
@@ -1525,13 +1750,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'POST',
       `/platform/billing/invoices/${invoice.body.id}/void`,
       { voidReason: 'No permitido' },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const voided = await http<{ status: SubscriptionInvoiceStatus }>(
       'POST',
       `/platform/billing/invoices/${secondInvoice.body.id}/void`,
       { voidReason: 'Factura duplicada' },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const overdueInvoice = await http<{ id: string }>(
       'POST',
@@ -1542,25 +1767,25 @@ describe('Identity and multi-company isolation (e2e)', () => {
         billingPeriodEnd: '2026-07-01',
         dueDate: '2026-07-01',
       },
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const overdue = await http<{ status: SubscriptionInvoiceStatus }>(
       'POST',
       `/platform/billing/invoices/${overdueInvoice.body.id}/mark-overdue`,
       undefined,
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const invoices = await http<Array<{ id: string }>>(
       'GET',
       '/platform/billing/invoices',
       undefined,
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const companyInvoices = await http<Array<{ id: string }>>(
       'GET',
       `/platform/companies/${company.company.id}/subscription/invoices`,
       undefined,
-      login.body.accessToken,
+      platformBillingSession.body.accessToken,
     );
     const audit = await prisma.platformAuditLog.findMany({
       where: { module: 'platform_billing' },
@@ -1589,9 +1814,29 @@ describe('Identity and multi-company isolation (e2e)', () => {
       invoice.body.invoiceNumber,
     );
     expect(Number(publicLink.body.invoice.balance)).toBe(2000);
+    expect(ownerSubscription.status).toBe(200);
+    expect(ownerSubscription.body.companyId).toBe(company.company.id);
+    expect(adminSubscription.status).toBe(200);
+    expect(adminSubscription.body.id).toBe(subscription.id);
+    expect(accountingInvoices.status).toBe(200);
+    expect(accountingInvoices.body.map(({ id }) => id)).toContain(
+      invoice.body.id,
+    );
+    expect(accountingPayments.status).toBe(200);
+    expect(sellerBilling.status).toBe(403);
+    expect(ownerInvoice.status).toBe(200);
+    expect(ownerInvoice.body.paymentLinks[0]?.token).toBe(
+      paymentLink.body.token,
+    );
+    expect(ownerPaymentLink.status).toBe(201);
+    expect(ownerPaymentLink.body.token).toBe(paymentLink.body.token);
+    expect(crossCompanyInvoice.status).toBe(404);
+    expect(clientMarkPaidAttempt.status).toBe(404);
     expect(reportedPayment.status).toBe(201);
     expect(reportedPayment.body.report.reference).toBe('TRX-001');
     expect(reportedPayment.body.link.reports).toHaveLength(1);
+    expect(invoiceAfterReport.status).toBe(SubscriptionInvoiceStatus.PENDING);
+    expect(Number(invoiceAfterReport.amountPaid)).toBe(0);
     expect(listedLinks.body.map(({ id }) => id)).toEqual(
       expect.arrayContaining([paymentLink.body.id]),
     );
@@ -1675,7 +1920,8 @@ describe('Identity and multi-company isolation (e2e)', () => {
         modules: { pos: true },
       },
     });
-    const subscription = await prisma.companySubscription.create({
+    const subscription = await prisma.companySubscription.update({
+      where: { companyId: company.company.id },
       data: {
         companyId: company.company.id,
         planId: plan.id,
@@ -1756,6 +2002,18 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       company.accessToken,
     );
+    const suspendedBilling = await http<{ status: CompanySubscriptionStatus }>(
+      'GET',
+      '/company-billing/subscription',
+      undefined,
+      company.accessToken,
+    );
+    const suspendedInvoices = await http<unknown[]>(
+      'GET',
+      '/company-billing/invoices',
+      undefined,
+      company.accessToken,
+    );
     const blockedPos = await http<unknown>(
       'GET',
       '/pos/search-items',
@@ -1831,6 +2089,11 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(suspendedCompany.status).toBe(CompanyStatus.SUSPENDED);
     expect(suspendedMe.status).toBe(200);
     expect(suspendedMe.body.company.status).toBe(CompanyStatus.SUSPENDED);
+    expect(suspendedBilling.status).toBe(200);
+    expect(suspendedBilling.body.status).toBe(
+      CompanySubscriptionStatus.SUSPENDED,
+    );
+    expect(suspendedInvoices.status).toBe(200);
     expect(blockedPos.status).toBe(403);
     expect(blockedSale.status).toBe(403);
     expect(reactivationPayment.status).toBe(201);
@@ -6249,7 +6512,10 @@ function validateProductCart(
   );
 }
 
-async function registerCompany(label: string) {
+async function registerCompany(
+  label: string,
+  planCode: 'BASIC' | 'PRO' | 'PREMIUM' | 'ENTERPRISE' | null = 'PREMIUM',
+) {
   const suffix = `${label}-${++registrationCounter}`;
   const response = await http<RegisterResponse>(
     'POST',
@@ -6260,6 +6526,7 @@ async function registerCompany(label: string) {
       ownerName: `Owner ${suffix}`,
       ownerEmail: `${suffix}@example.test`,
       password: TEST_PASSWORD,
+      ...(planCode ? { planCode } : {}),
     },
   );
   expect(response.status).toBe(201);

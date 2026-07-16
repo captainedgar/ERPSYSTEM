@@ -2,6 +2,7 @@ import { BusinessType } from '@prisma/client';
 import {
   IsEmail,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -9,6 +10,10 @@ import {
 } from 'class-validator';
 
 export class RegisterCompanyDto {
+  @IsOptional()
+  @IsIn(['BASIC', 'PRO', 'PREMIUM', 'ENTERPRISE'])
+  planCode?: 'BASIC' | 'PRO' | 'PREMIUM' | 'ENTERPRISE';
+
   @IsString()
   @MinLength(2)
   @MaxLength(120)

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequirePlanFeature } from '../common/decorators/require-plan-feature.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
   CreateElectronicInvoiceDto,
@@ -12,6 +13,7 @@ import { UpdateFiscalSettingsDto } from './dto/update-fiscal-settings.dto';
 import { FiscalService } from './fiscal.service';
 
 @Controller('fiscal')
+@RequirePlanFeature('fiscal_mock')
 export class FiscalController {
   constructor(private readonly service: FiscalService) {}
 

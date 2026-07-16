@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { CompanyBillingManager } from '@/components/company-billing-manager';
+import { hasPermission } from '@/lib/permissions';
 
 export default function SuspendedPage() {
   const router = useRouter();
@@ -24,8 +26,8 @@ export default function SuspendedPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-50 px-6 py-12">
-      <section className="w-full max-w-xl rounded-lg border border-amber-200 bg-white p-8 text-center shadow-sm">
+    <main className="min-h-screen bg-slate-50 px-6 py-12">
+      <section className="mx-auto w-full max-w-4xl rounded-lg border border-amber-200 bg-white p-8 text-center shadow-sm">
         <p className="text-sm font-semibold text-amber-700">
           Servicio suspendido
         </p>
@@ -49,6 +51,11 @@ export default function SuspendedPage() {
           Cerrar sesion
         </Button>
       </section>
+      {hasPermission(user, 'billing.view') && (
+        <section className="mx-auto mt-6 max-w-4xl">
+          <CompanyBillingManager compact />
+        </section>
+      )}
     </main>
   );
 }

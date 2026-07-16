@@ -2,11 +2,13 @@ import { Controller, Get, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequirePlanFeature } from '../common/decorators/require-plan-feature.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { FinancialDashboardQueryDto } from './dto/financial-dashboard-query.dto';
 import { FinancialDashboardService } from './financial-dashboard.service';
 
 @Controller('financial-dashboard')
+@RequirePlanFeature('financial_dashboard')
 export class FinancialDashboardController {
   constructor(private readonly service: FinancialDashboardService) {}
 

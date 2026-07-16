@@ -136,6 +136,10 @@ No implementados por estar fuera de esta fase:
 - MRR/ARR, churn y cohortes avanzados.
 - Pagina comercial publica.
 
+Platform Admin puede editar precio, ciclo, usuarios, sucursales, `maxProducts`
+en `modules` y revisar las features configuradas. La matriz estándar y el flujo
+de entitlements están documentados en `docs/SAAS_PLANS.md`.
+
 ## Alcance y seguridad
 
 - No se implemento DGII real.

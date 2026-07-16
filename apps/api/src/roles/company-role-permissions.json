@@ -78,6 +78,10 @@
     "financial_dashboard.inventory",
     "financial_dashboard.customers",
     "financial_dashboard.branches",
+    "billing.view",
+    "billing.pay",
+    "billing.invoices.view",
+    "billing.payments.view",
     "internal_documents.view",
     "internal_documents.create",
     "internal_documents.print",
@@ -223,6 +227,9 @@
     "financial_dashboard.view",
     "financial_dashboard.sales",
     "financial_dashboard.cash",
-    "financial_dashboard.customers"
+    "financial_dashboard.customers",
+    "billing.view",
+    "billing.invoices.view",
+    "billing.payments.view"
   ]
 }

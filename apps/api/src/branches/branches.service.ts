@@ -8,6 +8,7 @@ import { BranchStatus, Prisma, UserRole } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanyEntitlementsService } from '../company-entitlements/company-entitlements.service';
 import {
   AssignBranchUsersDto,
   UpdateUserBranchesDto,
@@ -24,6 +25,7 @@ export class BranchesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly entitlements: CompanyEntitlementsService,
   ) {}
 
   findAll(user: AuthUser) {
@@ -88,6 +90,7 @@ export class BranchesService {
   }
 
   async create(user: AuthUser, dto: CreateBranchDto) {
+    await this.entitlements.assertLimit(user.companyId, 'branches');
     const branch = await this.prisma.$transaction(async (tx) => {
       if (dto.isMain) {
         await tx.branch.updateMany({

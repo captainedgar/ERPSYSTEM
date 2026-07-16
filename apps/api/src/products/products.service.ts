@@ -10,6 +10,7 @@ import { rethrowCatalogConflict } from '../catalog/catalog-errors';
 import { UpdateCatalogStatusDto } from '../catalog/dto/update-catalog-status.dto';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanyEntitlementsService } from '../company-entitlements/company-entitlements.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -25,6 +26,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly entitlements: CompanyEntitlementsService,
   ) {}
 
   findAll(user: AuthUser, query: ProductQueryDto) {
@@ -73,6 +75,7 @@ export class ProductsService {
   }
 
   async create(user: AuthUser, dto: CreateProductDto) {
+    await this.entitlements.assertLimit(user.companyId, 'products');
     await this.validateRelations(user.companyId, dto);
     try {
       const product = await this.prisma.$transaction(async (tx) => {

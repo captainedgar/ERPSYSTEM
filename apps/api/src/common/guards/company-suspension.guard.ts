@@ -16,6 +16,7 @@ const ALLOWED_SUSPENDED_PATHS = new Set([
   '/auth/logout',
   '/auth/refresh',
 ]);
+const ALLOWED_SUSPENDED_PREFIXES = ['/company-billing'];
 
 @Injectable()
 export class CompanySuspensionGuard implements CanActivate {
@@ -39,6 +40,9 @@ export class CompanySuspensionGuard implements CanActivate {
 
     const path = request.path ?? request.url.split('?')[0];
     if (ALLOWED_SUSPENDED_PATHS.has(path)) return true;
+    if (ALLOWED_SUSPENDED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+      return true;
+    }
 
     throw new ForbiddenException(
       'Tu empresa esta suspendida por falta de pago.',

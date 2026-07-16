@@ -12,7 +12,10 @@ import { CategoriesModule } from './categories/categories.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { CompanySuspensionGuard } from './common/guards/company-suspension.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { PlanFeatureGuard } from './common/guards/plan-feature.guard';
 import { CompaniesModule } from './companies/companies.module';
+import { CompanyBillingModule } from './company-billing/company-billing.module';
+import { CompanyEntitlementsModule } from './company-entitlements/company-entitlements.module';
 import { CustomersModule } from './customers/customers.module';
 import { DataExportModule } from './data-export/data-export.module';
 import { FinancialDashboardModule } from './financial-dashboard/financial-dashboard.module';
@@ -56,6 +59,8 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     InventoryModule,
     CompaniesModule,
+    CompanyBillingModule,
+    CompanyEntitlementsModule,
     CustomersModule,
     DataExportModule,
     FinancialDashboardModule,
@@ -76,6 +81,7 @@ import { UsersModule } from './users/users.module';
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: CompanySuspensionGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: PlanFeatureGuard },
   ],
 })
 export class AppModule {}

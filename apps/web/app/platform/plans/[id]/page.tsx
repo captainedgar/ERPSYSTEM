@@ -209,6 +209,41 @@ export default function PlatformPlanDetailPage() {
                 type="number"
                 value={String(plan.maxBranches ?? '')}
               />
+              <Field
+                label="Max productos"
+                onChange={(value) =>
+                  setPlan((current) =>
+                    current
+                      ? {
+                          ...current,
+                          modules: {
+                            ...current.modules,
+                            maxProducts: value ? Number(value) : null,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                type="number"
+                value={String(plan.modules.maxProducts ?? '')}
+              />
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  Features configuradas
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {Object.entries(plan.modules)
+                    .filter(([, enabled]) => enabled === true)
+                    .map(([feature]) => (
+                      <span
+                        className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700"
+                        key={feature}
+                      >
+                        {feature}
+                      </span>
+                    ))}
+                </div>
+              </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-semibold text-slate-700">Resumen</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">

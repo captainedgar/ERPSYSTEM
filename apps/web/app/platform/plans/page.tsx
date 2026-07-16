@@ -24,11 +24,10 @@ import {
 } from '@/lib/platform';
 
 const defaultModules = {
-  catalog: true,
-  inventory: true,
+  maxProducts: 500,
   pos: true,
-  fiscalMock: false,
-  reports: false,
+  inventory_basic: true,
+  reports_basic: true,
 };
 
 export default function PlatformPlansPage() {
@@ -46,6 +45,7 @@ export default function PlatformPlansPage() {
     graceDays: '5',
     maxUsers: '',
     maxBranches: '',
+    maxProducts: '',
   });
 
   async function refresh() {
@@ -89,7 +89,12 @@ export default function PlatformPlansPage() {
         graceDays: Number(form.graceDays),
         maxUsers: form.maxUsers ? Number(form.maxUsers) : undefined,
         maxBranches: form.maxBranches ? Number(form.maxBranches) : undefined,
-        modules: defaultModules,
+        modules: {
+          ...defaultModules,
+          maxProducts: form.maxProducts
+            ? Number(form.maxProducts)
+            : defaultModules.maxProducts,
+        },
       });
       setForm((current) => ({ ...current, name: '', description: '' }));
       setMessage('Plan creado correctamente.');
@@ -206,6 +211,17 @@ export default function PlatformPlansPage() {
                   type="number"
                   value={form.maxBranches}
                 />
+                <Field
+                  label="Max productos"
+                  onChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      maxProducts: value,
+                    }))
+                  }
+                  type="number"
+                  value={form.maxProducts}
+                />
               </div>
               <Button disabled={submitting || !form.name} type="submit">
                 Crear plan
@@ -227,6 +243,7 @@ export default function PlatformPlansPage() {
                       <th className="py-3">Plan</th>
                       <th className="py-3">Precio</th>
                       <th className="py-3">Gracia</th>
+                      <th className="py-3">Limites</th>
                       <th className="py-3">Estado</th>
                       <th className="py-3">Empresas</th>
                       <th className="py-3" />
@@ -248,6 +265,14 @@ export default function PlatformPlansPage() {
                         </td>
                         <td className="py-3">{platformMoney(plan.price)}</td>
                         <td className="py-3">{plan.graceDays} dias</td>
+                        <td className="py-3 text-xs">
+                          {plan.maxBranches ?? 'Custom'} suc. /{' '}
+                          {plan.maxUsers ?? 'Custom'} usr. /{' '}
+                          {typeof plan.modules.maxProducts === 'number'
+                            ? plan.modules.maxProducts
+                            : 'Custom'}{' '}
+                          prod.
+                        </td>
                         <td className="py-3">
                           <span
                             className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${

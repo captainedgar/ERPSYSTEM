@@ -14,6 +14,7 @@ import type { Response } from 'express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
+import { RequirePlanFeature } from '../common/decorators/require-plan-feature.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { ProductImportOptionsDto } from './dto/product-import-options.dto';
 import { ProductImportService } from './product-import.service';
@@ -40,6 +41,7 @@ const excelUpload = FileInterceptor('file', {
 });
 
 @Controller('products/import')
+@RequirePlanFeature('product_import')
 export class ProductImportController {
   constructor(private readonly service: ProductImportService) {}
 

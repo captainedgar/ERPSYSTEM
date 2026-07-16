@@ -17,6 +17,12 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Get('registration-plans')
+  registrationPlans() {
+    return this.authService.registrationPlans();
+  }
+
+  @Public()
   @Post('register-company')
   registerCompany(@Body() dto: RegisterCompanyDto, @Req() request: Request) {
     return this.authService.registerCompany(dto, requestContext(request));

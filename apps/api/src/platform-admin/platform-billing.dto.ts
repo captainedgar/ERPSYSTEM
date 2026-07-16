@@ -54,7 +54,7 @@ export class CreateSaasPlanDto {
   maxBranches?: number;
 
   @IsObject()
-  modules!: Record<string, boolean>;
+  modules!: Record<string, boolean | number | string | null>;
 }
 
 export class UpdateSaasPlanDto {
@@ -98,7 +98,7 @@ export class UpdateSaasPlanDto {
 
   @IsOptional()
   @IsObject()
-  modules?: Record<string, boolean>;
+  modules?: Record<string, boolean | number | string | null>;
 }
 
 export class UpdateSaasPlanStatusDto {

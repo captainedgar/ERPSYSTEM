@@ -36,6 +36,7 @@ Esta matriz es la fuente de verdad funcional para los roles empresariales predef
 | Usuarios | Administrar | Administrar usuarios no OWNER | No | No | No | No |
 | Roles | Ver y asignar | Ver y asignar roles no OWNER | No | No | No | No |
 | Configuración negocio | Administrar | Administrar | No | No | No | No |
+| Suscripción y pagos SaaS | Administrar pago | Ver/pagar | No | No | No | Ver facturas/pagos |
 | Platform Admin | No | No | No | No | No | No |
 
 ## Permisos administrativos reales
@@ -50,6 +51,7 @@ Esta matriz es la fuente de verdad funcional para los roles empresariales predef
 | Backup completo | `data_export.full_backup` |
 | Fiscal configuración | `fiscal.settings.view`, `fiscal.settings.update` |
 | Fiscal documentos | `fiscal.documents.*` |
+| Suscripción SaaS | `billing.view`, `billing.pay`, `billing.invoices.view`, `billing.payments.view` |
 
 No existen `branches.disable`, `users.change_status`, `users.assign_role`, `users.assign_branches`, `roles.manage`, `business_settings.*` ni `fiscal.invoices.*`. Se usan los códigos reales indicados arriba.
 
