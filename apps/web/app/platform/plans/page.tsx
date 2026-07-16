@@ -15,6 +15,7 @@ import {
   platformMoney,
   platformPanelClass,
 } from '@/components/platform-ui';
+import { canManageBilling, usePlatformUser } from '@/components/platform-shell';
 import {
   createSaasPlan,
   listSaasPlans,
@@ -31,6 +32,7 @@ const defaultModules = {
 };
 
 export default function PlatformPlansPage() {
+  const platformUser = usePlatformUser();
   const [plans, setPlans] = useState<SaasPlan[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -128,7 +130,9 @@ export default function PlatformPlansPage() {
         </section>
         <section className="mt-6 grid gap-6 xl:grid-cols-[380px_1fr]">
           <form
-            className={platformPanelClass}
+            className={`${platformPanelClass} ${
+              canManageBilling(platformUser) ? '' : 'hidden'
+            }`}
             onSubmit={(event) => void submit(event)}
           >
             <h2 className="text-lg font-semibold text-slate-950">Nuevo plan</h2>

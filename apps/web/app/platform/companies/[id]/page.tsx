@@ -16,6 +16,7 @@ import {
   platformMoney,
   platformPanelClass,
 } from '@/components/platform-ui';
+import { usePlatformUser } from '@/components/platform-shell';
 import {
   getCompanySubscription,
   getPlatformCompany,
@@ -30,6 +31,7 @@ import {
 
 export default function PlatformCompanyDetailPage() {
   const params = useParams<{ id: string }>();
+  const platformUser = usePlatformUser();
   const [company, setCompany] = useState<PlatformCompany | null>(null);
   const [metrics, setMetrics] = useState<PlatformCompanyMetrics | null>(null);
   const [subscription, setSubscription] = useState<CompanySubscription | null>(
@@ -114,21 +116,25 @@ export default function PlatformCompanyDetailPage() {
           <PlatformHeader title={company?.name ?? 'Empresa'} />
           {company && (
             <div className="flex flex-wrap gap-3">
-              <Button
-                disabled={submitting || company.status === 'SUSPENDED'}
-                onClick={() => void changeStatus('SUSPENDED')}
-                type="button"
-                variant="secondary"
-              >
-                Suspender
-              </Button>
-              <Button
-                disabled={submitting || company.status === 'ACTIVE'}
-                onClick={() => void changeStatus('ACTIVE')}
-                type="button"
-              >
-                Reactivar
-              </Button>
+              {platformUser?.role === 'SUPER_ADMIN' && (
+                <>
+                  <Button
+                    disabled={submitting || company.status === 'SUSPENDED'}
+                    onClick={() => void changeStatus('SUSPENDED')}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Suspender
+                  </Button>
+                  <Button
+                    disabled={submitting || company.status === 'ACTIVE'}
+                    onClick={() => void changeStatus('ACTIVE')}
+                    type="button"
+                  >
+                    Reactivar
+                  </Button>
+                </>
+              )}
               <Link
                 className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
                 href={`/platform/companies/${company.id}/subscription`}
@@ -230,6 +236,32 @@ export default function PlatformCompanyDetailPage() {
                     Esta empresa no tiene suscripcion asignada.
                   </p>
                 )}
+              </div>
+            </section>
+
+            <section className={`mt-6 ${platformPanelClass}`}>
+              <h2 className="text-lg font-semibold text-slate-950">
+                Operacion SaaS
+              </h2>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  className={platformLinkClass}
+                  href={`/platform/companies/${company.id}/subscription`}
+                >
+                  Suscripcion, pagos y eventos
+                </Link>
+                <Link
+                  className={platformLinkClass}
+                  href={`/platform/billing/invoices?companyId=${company.id}`}
+                >
+                  Facturas de la empresa
+                </Link>
+                <Link
+                  className={platformLinkClass}
+                  href={`/platform/billing/payments?companyId=${company.id}`}
+                >
+                  Pagos de la empresa
+                </Link>
               </div>
             </section>
 

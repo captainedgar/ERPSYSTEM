@@ -14,6 +14,7 @@ import {
   platformMoney,
   platformPanelClass,
 } from '@/components/platform-ui';
+import { canManageBilling, usePlatformUser } from '@/components/platform-shell';
 import {
   listBillingPayments,
   listBillingSubscriptions,
@@ -30,6 +31,7 @@ import {
 const soonMs = 1000 * 60 * 60 * 24 * 7;
 
 export default function PlatformBillingPage() {
+  const platformUser = usePlatformUser();
   const [subscriptions, setSubscriptions] = useState<CompanySubscription[]>([]);
   const [companies, setCompanies] = useState<PlatformCompany[]>([]);
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
@@ -96,6 +98,13 @@ export default function PlatformBillingPage() {
   }, []);
 
   async function processNow() {
+    if (
+      !window.confirm(
+        'Este proceso puede mover suscripciones a gracia y suspender empresas vencidas. ¿Deseas continuar?',
+      )
+    ) {
+      return;
+    }
     setProcessing(true);
     setError('');
     setProcessResult(null);
@@ -152,13 +161,15 @@ export default function PlatformBillingPage() {
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <PlatformHeader title="Billing SaaS" />
-          <Button
-            disabled={processing}
-            onClick={() => void processNow()}
-            type="button"
-          >
-            {processing ? 'Procesando...' : 'Procesar vencimientos ahora'}
-          </Button>
+          {canManageBilling(platformUser) && (
+            <Button
+              disabled={processing}
+              onClick={() => void processNow()}
+              type="button"
+            >
+              {processing ? 'Procesando...' : 'Procesar vencimientos ahora'}
+            </Button>
+          )}
           <Link className={platformLinkClass} href="/platform/billing/invoices">
             Ver facturas
           </Link>

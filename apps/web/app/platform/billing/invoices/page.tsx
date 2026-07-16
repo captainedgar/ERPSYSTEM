@@ -2,6 +2,7 @@
 
 import { Button } from '@comercia/ui';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import {
@@ -15,6 +16,7 @@ import {
   platformMoney,
   platformPanelClass,
 } from '@/components/platform-ui';
+import { canManageBilling, usePlatformUser } from '@/components/platform-shell';
 import {
   createSubscriptionInvoice,
   listBillingSubscriptions,
@@ -34,6 +36,9 @@ const statusFilters: Array<SubscriptionInvoiceStatus | 'ALL'> = [
 ];
 
 export default function PlatformBillingInvoicesPage() {
+  const platformUser = usePlatformUser();
+  const searchParams = useSearchParams();
+  const companyId = searchParams.get('companyId');
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [subscriptions, setSubscriptions] = useState<CompanySubscription[]>([]);
   const [status, setStatus] = useState<SubscriptionInvoiceStatus | 'ALL'>(
@@ -137,10 +142,12 @@ export default function PlatformBillingInvoicesPage() {
 
   const filtered = useMemo(
     () =>
-      status === 'ALL'
-        ? invoices
-        : invoices.filter((invoice) => invoice.status === status),
-    [invoices, status],
+      invoices.filter(
+        (invoice) =>
+          (!companyId || invoice.companyId === companyId) &&
+          (status === 'ALL' || invoice.status === status),
+      ),
+    [companyId, invoices, status],
   );
 
   return (
@@ -155,7 +162,9 @@ export default function PlatformBillingInvoicesPage() {
         )}
         <section className="mt-6 grid gap-6 xl:grid-cols-[380px_1fr]">
           <form
-            className={platformPanelClass}
+            className={`${platformPanelClass} ${
+              canManageBilling(platformUser) ? '' : 'hidden'
+            }`}
             onSubmit={(event) => void submit(event)}
           >
             <h2 className="text-lg font-semibold text-slate-950">

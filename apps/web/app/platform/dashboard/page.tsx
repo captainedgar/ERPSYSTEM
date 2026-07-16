@@ -16,17 +16,27 @@ import {
 } from '@/components/platform-ui';
 import {
   getPlatformMetrics,
+  listBillingPayments,
+  listBillingSubscriptions,
   listPlatformAuditLogs,
   listPlatformCompanies,
+  listSubscriptionInvoices,
   type PlatformAuditLog,
   type PlatformCompany,
   type PlatformMetrics,
+  type CompanySubscription,
+  type SubscriptionInvoice,
+  type SubscriptionPayment,
 } from '@/lib/platform';
 
 export default function PlatformDashboardPage() {
   const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
   const [companies, setCompanies] = useState<PlatformCompany[]>([]);
   const [auditLogs, setAuditLogs] = useState<PlatformAuditLog[]>([]);
+  const [subscriptions, setSubscriptions] = useState<CompanySubscription[]>([]);
+  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
+  const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
+  const [loadedAt, setLoadedAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -34,15 +44,29 @@ export default function PlatformDashboardPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [nextMetrics, nextCompanies, nextAuditLogs] = await Promise.all([
+        const [
+          nextMetrics,
+          nextCompanies,
+          nextAuditLogs,
+          nextSubscriptions,
+          nextInvoices,
+          nextPayments,
+        ] = await Promise.all([
           getPlatformMetrics(),
           listPlatformCompanies(),
           listPlatformAuditLogs(),
+          listBillingSubscriptions(),
+          listSubscriptionInvoices(),
+          listBillingPayments(),
         ]);
         if (!cancelled) {
           setMetrics(nextMetrics);
           setCompanies(nextCompanies);
           setAuditLogs(nextAuditLogs);
+          setSubscriptions(nextSubscriptions);
+          setInvoices(nextInvoices);
+          setPayments(nextPayments);
+          setLoadedAt(Date.now());
         }
       } catch (reason) {
         if (!cancelled) {
@@ -85,6 +109,39 @@ export default function PlatformDashboardPage() {
         .slice(0, 6),
     [companies],
   );
+  const billing = useMemo(() => {
+    const pendingInvoices = invoices.filter((invoice) =>
+      ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(invoice.status),
+    );
+    return {
+      overdueSubscriptions: subscriptions.filter((subscription) =>
+        ['PAYMENT_DUE', 'GRACE_PERIOD', 'SUSPENDED'].includes(
+          subscription.status,
+        ),
+      ).length,
+      pendingInvoices: pendingInvoices.length,
+      pendingBalance: pendingInvoices.reduce(
+        (sum, invoice) => sum + Number(invoice.balance),
+        0,
+      ),
+      mrr: subscriptions
+        .filter((subscription) => subscription.status === 'ACTIVE')
+        .reduce((sum, subscription) => {
+          const price = Number(subscription.plan.price);
+          return (
+            sum +
+            (subscription.plan.billingInterval === 'YEARLY'
+              ? price / 12
+              : price)
+          );
+        }, 0),
+      recentPayments: payments.filter(
+        (payment) =>
+          loadedAt - new Date(payment.paidAt).getTime() <=
+          1000 * 60 * 60 * 24 * 30,
+      ).length,
+    };
+  }, [invoices, loadedAt, payments, subscriptions]);
 
   return (
     <main className="px-5 py-8">
@@ -117,34 +174,34 @@ export default function PlatformDashboardPage() {
             value={metrics?.suspendedCompanies ?? '...'}
           />
           <PlatformMetricCard
-            helper="Usuarios de empresas"
-            label="Usuarios totales"
-            tone="zinc"
-            value={metrics?.totalUsers ?? '...'}
+            helper="Planes activos mensualizados"
+            label="MRR estimado"
+            tone="emerald"
+            value={platformMoney(billing.mrr)}
           />
           <PlatformMetricCard
-            helper={`${metrics?.totalSales ?? 0} ventas registradas`}
-            label="Ventas agregadas"
-            tone="cyan"
-            value={platformMoney(metrics?.totalSalesAmount)}
+            helper="Pendientes, en gracia o suspendidas"
+            label="Alertas de cobro"
+            tone={billing.overdueSubscriptions ? 'rose' : 'emerald'}
+            value={billing.overdueSubscriptions}
           />
           <PlatformMetricCard
-            helper="Recibos y facturas internas"
-            label="Docs internos"
+            helper="Con balance por cobrar"
+            label="Facturas pendientes"
             tone="amber"
-            value={metrics?.internalDocuments ?? '...'}
+            value={billing.pendingInvoices}
           />
           <PlatformMetricCard
-            helper="Modulo fiscal mock"
-            label="Docs fiscales"
+            helper="Balance de facturas abiertas"
+            label="Balance pendiente"
             tone="cyan"
-            value={metrics?.electronicInvoices ?? '...'}
+            value={platformMoney(billing.pendingBalance)}
           />
           <PlatformMetricCard
-            helper="Errores agregados"
-            label="Alertas fiscales"
-            tone={metrics?.fiscalErrors ? 'rose' : 'emerald'}
-            value={metrics?.fiscalErrors ?? '...'}
+            helper="Ultimos 30 dias"
+            label="Pagos recientes"
+            tone="emerald"
+            value={billing.recentPayments}
           />
         </section>
 

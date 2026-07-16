@@ -2,7 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import {
   clearPlatformToken,
@@ -13,13 +19,41 @@ import {
 } from '@/lib/platform';
 
 const nav = [
-  { href: '/platform/dashboard', label: 'Dashboard' },
-  { href: '/platform/companies', label: 'Empresas' },
-  { href: '/platform/plans', label: 'Planes' },
-  { href: '/platform/billing', label: 'Billing' },
-  { href: '/platform/billing/invoices', label: 'Facturas' },
-  { href: '/platform/audit', label: 'Auditoria' },
+  {
+    label: 'Inicio',
+    items: [{ href: '/platform/dashboard', label: 'Dashboard' }],
+  },
+  {
+    label: 'Clientes SaaS',
+    items: [
+      { href: '/platform/companies', label: 'Empresas' },
+      { href: '/platform/billing', label: 'Suscripciones', exact: true },
+    ],
+  },
+  {
+    label: 'Facturacion SaaS',
+    roles: ['SUPER_ADMIN', 'BILLING_ADMIN', 'AUDITOR'],
+    items: [
+      { href: '/platform/plans', label: 'Planes' },
+      { href: '/platform/billing/invoices', label: 'Facturas' },
+      { href: '/platform/billing/payments', label: 'Pagos' },
+    ],
+  },
+  {
+    label: 'Operacion',
+    items: [{ href: '/platform/audit', label: 'Auditoria' }],
+  },
 ];
+
+const PlatformUserContext = createContext<PlatformUser | null>(null);
+
+export function usePlatformUser() {
+  return useContext(PlatformUserContext);
+}
+
+export function canManageBilling(user: PlatformUser | null) {
+  return user?.role === 'SUPER_ADMIN' || user?.role === 'BILLING_ADMIN';
+}
 
 export function PlatformShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -61,24 +95,38 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             Platform Admin
           </h1>
         </Link>
-        <nav className="mt-8 grid gap-2">
-          {nav.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                  active
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-                }`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="mt-8 grid gap-6">
+          {nav
+            .filter(
+              (section) => !section.roles || section.roles.includes(user.role),
+            )
+            .map((section) => (
+              <div key={section.label}>
+                <p className="px-3 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+                  {section.label}
+                </p>
+                <div className="mt-2 grid gap-1">
+                  {section.items.map((item) => {
+                    const active =
+                      pathname === item.href ||
+                      (!item.exact && pathname.startsWith(`${item.href}/`));
+                    return (
+                      <Link
+                        className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                          active
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                        }`}
+                        href={item.href}
+                        key={item.href}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
         </nav>
       </aside>
       <div className="lg:pl-72">
@@ -104,7 +152,9 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </header>
-        {children}
+        <PlatformUserContext.Provider value={user}>
+          {children}
+        </PlatformUserContext.Provider>
       </div>
     </div>
   );
