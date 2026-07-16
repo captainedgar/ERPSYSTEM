@@ -278,3 +278,10 @@ export class ReportSubscriptionPaymentDto {
   @MaxLength(500)
   notes?: string;
 }
+
+export class ReviewPlanChangeRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  adminNote?: string;
+}

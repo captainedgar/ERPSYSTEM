@@ -22,6 +22,7 @@ import {
   CreateSubscriptionInvoiceDto,
   CreateSubscriptionPaymentLinkDto,
   ReportSubscriptionPaymentDto,
+  ReviewPlanChangeRequestDto,
   RegisterSubscriptionPaymentDto,
   SubscriptionPaymentLinkQueryDto,
   UpdateSaasPlanDto,
@@ -137,6 +138,51 @@ export class PlatformBillingController {
   @Get('billing/subscriptions')
   listSubscriptions() {
     return this.billing.listSubscriptions();
+  }
+
+  @Get('billing/plan-change-requests')
+  listPlanChangeRequests() {
+    return this.billing.listPlanChangeRequests();
+  }
+
+  @Get('billing/plan-change-requests/:id')
+  getPlanChangeRequest(@Param('id') id: string) {
+    return this.billing.getPlanChangeRequest(id);
+  }
+
+  @Post('billing/plan-change-requests/:id/approve')
+  approvePlanChangeRequest(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewPlanChangeRequestDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.approvePlanChangeRequest(
+      user,
+      id,
+      dto,
+      requestContext(request),
+    );
+  }
+
+  @Post('billing/plan-change-requests/:id/reject')
+  rejectPlanChangeRequest(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewPlanChangeRequestDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.rejectPlanChangeRequest(
+      user,
+      id,
+      dto,
+      requestContext(request),
+    );
+  }
+
+  @Get('billing/payment-reports')
+  listPaymentReports() {
+    return this.billing.listPaymentReports();
   }
 
   @Get('billing/invoices')

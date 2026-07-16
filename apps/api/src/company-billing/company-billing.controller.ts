@@ -58,6 +58,18 @@ export class CompanyBillingController {
     return this.billing.listAvailablePlans();
   }
 
+  @Get('plan-change-requests')
+  @RequirePermissions('billing.view')
+  planChangeRequests(@CurrentUser() user: AuthUser) {
+    return this.billing.listPlanChangeRequests(user.companyId);
+  }
+
+  @Get('payment-instructions')
+  @RequirePermissions('billing.view')
+  paymentInstructions() {
+    return this.billing.getPaymentInstructions();
+  }
+
   @Post('plan-change-request')
   @RequirePermissions('billing.pay')
   requestPlanChange(

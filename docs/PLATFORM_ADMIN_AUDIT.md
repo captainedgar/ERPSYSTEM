@@ -148,3 +148,20 @@ de entitlements están documentados en `docs/SAAS_PLANS.md`.
 - No se mezclaron sesiones Platform y empresariales.
 - No se modifico el esquema de base de datos.
 - No se borraron datos ni se ejecutaron comandos destructivos.
+# Solicitudes de cambio de plan
+
+Platform Admin dispone de `/platform/billing/plan-change-requests` y endpoints
+de listado, detalle, aprobacion y rechazo. `SUPER_ADMIN` y `BILLING_ADMIN`
+pueden revisar; los demas roles autorizados en Platform conservan acceso de
+lectura.
+
+La aprobacion cambia exclusivamente `CompanySubscription.planId`, genera un
+`SubscriptionEvent` y auditoria Platform. No registra pagos, no crea cargos y
+no procesa dinero. El rechazo conserva la suscripcion y registra nota y
+auditoria.
+
+# Reportes manuales
+
+`GET /platform/billing/payment-reports` alimenta la seccion de reportes dentro
+de Pagos SaaS. Un reporte publico nunca se considera pago aprobado
+automaticamente.

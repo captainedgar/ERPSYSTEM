@@ -237,6 +237,34 @@ export interface PublicSubscriptionPaymentLink {
       'id' | 'status' | 'amount' | 'currency' | 'reference' | 'reportedAt'
     >
   >;
+  paymentInstructions: {
+    methods: Array<{
+      code: string;
+      name: string;
+      bank?: string;
+      accountNumber?: string;
+      instructions: string;
+    }>;
+    billingContact: { email: string; whatsapp: string };
+    card: { available: false; label: string; notice: string };
+  };
+}
+
+export interface PlatformPlanChangeRequest {
+  id: string;
+  companyId: string;
+  company: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
+  requestedBy?: { id: string; name: string; email: string } | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  currentPlanCode?: string | null;
+  currentPlanName?: string | null;
+  requestedPlanCode?: string | null;
+  requestedPlanName?: string | null;
+  adminNote?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  subscription?: CompanySubscription | null;
+  requestedPlan?: SaasPlan | null;
 }
 
 export interface SubscriptionEvent {
@@ -404,6 +432,52 @@ export function listBillingSubscriptions() {
 
 export function listBillingPayments() {
   return platformRequest<SubscriptionPayment[]>('/platform/billing/payments');
+}
+
+export function listPlanChangeRequests() {
+  return platformRequest<PlatformPlanChangeRequest[]>(
+    '/platform/billing/plan-change-requests',
+  );
+}
+
+export function getPlanChangeRequest(id: string) {
+  return platformRequest<PlatformPlanChangeRequest>(
+    `/platform/billing/plan-change-requests/${id}`,
+  );
+}
+
+export function approvePlanChangeRequest(id: string, adminNote?: string) {
+  return platformRequest<{
+    request: PlatformPlanChangeRequest;
+    message: string;
+  }>(`/platform/billing/plan-change-requests/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ adminNote }),
+  });
+}
+
+export function rejectPlanChangeRequest(id: string, adminNote?: string) {
+  return platformRequest<{
+    request: PlatformPlanChangeRequest;
+    message: string;
+  }>(`/platform/billing/plan-change-requests/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ adminNote }),
+  });
+}
+
+export function listSubscriptionPaymentReports() {
+  return platformRequest<
+    Array<
+      SubscriptionPaymentReport & {
+        company: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
+        invoice: Pick<
+          SubscriptionInvoice,
+          'id' | 'invoiceNumber' | 'status' | 'balance'
+        >;
+      }
+    >
+  >('/platform/billing/payment-reports');
 }
 
 export function getCompanySubscription(companyId: string) {

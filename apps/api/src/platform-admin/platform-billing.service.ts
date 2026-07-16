@@ -17,6 +17,7 @@ import {
 import { randomBytes } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { MANUAL_PAYMENT_INSTRUCTIONS } from '../company-billing/company-billing.service';
 import { PlatformAuditService } from './platform-audit.service';
 import {
   CreateSaasPlanDto,
@@ -25,6 +26,7 @@ import {
   CreateSubscriptionInvoiceDto,
   ReportSubscriptionPaymentDto,
   RegisterSubscriptionPaymentDto,
+  ReviewPlanChangeRequestDto,
   SubscriptionPaymentLinkQueryDto,
   UpdateSaasPlanDto,
   UpdateSaasPlanStatusDto,
@@ -101,6 +103,161 @@ export class PlatformBillingService {
       include: planInclude,
       orderBy: [{ isActive: 'desc' }, { price: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  async listPlanChangeRequests() {
+    const requests = await this.prisma.auditLog.findMany({
+      where: {
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+        module: 'company_billing',
+      },
+      include: {
+        company: { select: { id: true, name: true, status: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return requests.map((request) => this.planChangeRequestResponse(request));
+  }
+
+  async getPlanChangeRequest(id: string) {
+    const request = await this.findPlanChangeRequest(id);
+    const subscription = await this.prisma.companySubscription.findUnique({
+      where: { companyId: request.companyId },
+      include: subscriptionInclude,
+    });
+    const metadata = this.objectMetadata(request.metadataJson);
+    const requestedPlanId =
+      typeof metadata.requestedPlanId === 'string'
+        ? metadata.requestedPlanId
+        : null;
+    const requestedPlan = requestedPlanId
+      ? await this.prisma.saasPlan.findUnique({
+          where: { id: requestedPlanId },
+          include: planInclude,
+        })
+      : null;
+    return {
+      ...this.planChangeRequestResponse(request),
+      subscription,
+      requestedPlan,
+    };
+  }
+
+  async approvePlanChangeRequest(
+    user: PlatformAuthUser,
+    id: string,
+    dto: ReviewPlanChangeRequestDto,
+    context: PlatformRequestContext,
+  ) {
+    this.requireBillingAdmin(user);
+    const request = await this.findPlanChangeRequest(id);
+    const metadata = this.objectMetadata(request.metadataJson);
+    this.ensurePendingPlanChange(metadata);
+    const requestedPlanId =
+      typeof metadata.requestedPlanId === 'string'
+        ? metadata.requestedPlanId
+        : null;
+    if (!requestedPlanId) {
+      throw new BadRequestException('La solicitud no contiene un plan valido');
+    }
+    const plan = await this.prisma.saasPlan.findFirst({
+      where: { id: requestedPlanId, isActive: true },
+    });
+    if (!plan)
+      throw new BadRequestException('El plan solicitado no esta activo');
+    const reviewedAt = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const subscription = await tx.companySubscription.findUnique({
+        where: { companyId: request.companyId },
+      });
+      if (!subscription) {
+        throw new BadRequestException('La empresa no tiene suscripcion');
+      }
+      const updated = await tx.companySubscription.update({
+        where: { id: subscription.id },
+        data: { planId: plan.id },
+        include: subscriptionInclude,
+      });
+      await tx.subscriptionEvent.create({
+        data: {
+          companySubscriptionId: subscription.id,
+          companyId: request.companyId,
+          type: SubscriptionEventType.PLAN_ASSIGNED,
+          message: `Cambio de plan aprobado: ${plan.name}`,
+          metadata: { planChangeRequestId: id, planId: plan.id },
+          createdByPlatformUserId: user.platformUserId,
+        },
+      });
+      await tx.auditLog.update({
+        where: { id },
+        data: {
+          metadataJson: {
+            ...metadata,
+            status: 'APPROVED',
+            adminNote: dto.adminNote?.trim() ?? null,
+            reviewedAt: reviewedAt.toISOString(),
+            reviewedByPlatformUserId: user.platformUserId,
+          },
+        },
+      });
+      return updated;
+    });
+    await this.audit.create({
+      user,
+      action: 'SAAS_PLAN_CHANGE_APPROVED',
+      module: 'platform_billing',
+      entityType: 'AuditLog',
+      entityId: id,
+      description: `Cambio al plan ${plan.name} aprobado`,
+      metadata: { companyId: request.companyId, planId: plan.id },
+      ...context,
+    });
+    return {
+      request: await this.getPlanChangeRequest(id),
+      subscription: result,
+      message: `Solicitud aprobada. El plan fue actualizado a ${plan.name}.`,
+    };
+  }
+
+  async rejectPlanChangeRequest(
+    user: PlatformAuthUser,
+    id: string,
+    dto: ReviewPlanChangeRequestDto,
+    context: PlatformRequestContext,
+  ) {
+    this.requireBillingAdmin(user);
+    const request = await this.findPlanChangeRequest(id);
+    const metadata = this.objectMetadata(request.metadataJson);
+    this.ensurePendingPlanChange(metadata);
+    const reviewedAt = new Date();
+    await this.prisma.auditLog.update({
+      where: { id },
+      data: {
+        metadataJson: {
+          ...metadata,
+          status: 'REJECTED',
+          adminNote: dto.adminNote?.trim() ?? null,
+          reviewedAt: reviewedAt.toISOString(),
+          reviewedByPlatformUserId: user.platformUserId,
+        },
+      },
+    });
+    await this.audit.create({
+      user,
+      action: 'SAAS_PLAN_CHANGE_REJECTED',
+      module: 'platform_billing',
+      entityType: 'AuditLog',
+      entityId: id,
+      description: 'Solicitud de cambio de plan rechazada',
+      metadata: { companyId: request.companyId },
+      ...context,
+    });
+    return {
+      request: await this.getPlanChangeRequest(id),
+      message: 'Solicitud rechazada.',
+    };
   }
 
   async createPlan(
@@ -582,9 +739,10 @@ export class PlatformBillingService {
 
   async getPublicPaymentLink(token: string) {
     const link = await this.findPaymentLinkByToken(token);
-    return this.publicPaymentLinkResponse(
-      await this.syncPaymentLinkStatus(link),
-    );
+    return {
+      ...this.publicPaymentLinkResponse(await this.syncPaymentLinkStatus(link)),
+      paymentInstructions: MANUAL_PAYMENT_INSTRUCTIONS,
+    };
   }
 
   async reportPublicPayment(
@@ -635,9 +793,12 @@ export class PlatformBillingService {
     });
     return {
       report,
-      link: this.publicPaymentLinkResponse(
-        await this.findPaymentLinkByToken(token),
-      ),
+      link: {
+        ...this.publicPaymentLinkResponse(
+          await this.findPaymentLinkByToken(token),
+        ),
+        paymentInstructions: MANUAL_PAYMENT_INSTRUCTIONS,
+      },
     };
   }
 
@@ -949,6 +1110,25 @@ export class PlatformBillingService {
     });
   }
 
+  listPaymentReports() {
+    return this.prisma.subscriptionPaymentReport.findMany({
+      include: {
+        company: { select: { id: true, name: true, status: true } },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            balance: true,
+          },
+        },
+        paymentLink: { select: { id: true, token: true, status: true } },
+      },
+      orderBy: { reportedAt: 'desc' },
+      take: 200,
+    });
+  }
+
   listSubscriptions() {
     return this.prisma.companySubscription.findMany({
       include: subscriptionInclude,
@@ -1092,6 +1272,63 @@ export class PlatformBillingService {
     ) {
       throw new ForbiddenException('No tienes permiso de billing');
     }
+  }
+
+  private async findPlanChangeRequest(id: string) {
+    const request = await this.prisma.auditLog.findFirst({
+      where: {
+        id,
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+        module: 'company_billing',
+      },
+      include: {
+        company: { select: { id: true, name: true, status: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+    if (!request) {
+      throw new NotFoundException('Solicitud de cambio de plan no encontrada');
+    }
+    return request;
+  }
+
+  private objectMetadata(value: unknown): Record<string, Prisma.JsonValue> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, Prisma.JsonValue>)
+      : {};
+  }
+
+  private ensurePendingPlanChange(metadata: Record<string, Prisma.JsonValue>) {
+    if (metadata.status !== 'PENDING') {
+      throw new BadRequestException('La solicitud ya fue revisada');
+    }
+  }
+
+  private planChangeRequestResponse(request: {
+    id: string;
+    companyId: string;
+    description: string;
+    metadataJson: unknown;
+    createdAt: Date;
+    company: { id: string; name: string; status: CompanyStatus };
+    user: { id: string; name: string; email: string } | null;
+  }) {
+    const metadata = this.objectMetadata(request.metadataJson);
+    return {
+      id: request.id,
+      companyId: request.companyId,
+      company: request.company,
+      requestedBy: request.user,
+      status: metadata.status ?? 'PENDING',
+      currentPlanCode: metadata.currentPlanCode ?? null,
+      currentPlanName: metadata.currentPlanName ?? null,
+      requestedPlanCode: metadata.requestedPlanCode ?? null,
+      requestedPlanName: metadata.requestedPlanName ?? null,
+      adminNote: metadata.adminNote ?? null,
+      reviewedAt: metadata.reviewedAt ?? null,
+      createdAt: request.createdAt,
+      description: request.description,
+    };
   }
 
   private decimal(value: number | string | Prisma.Decimal) {

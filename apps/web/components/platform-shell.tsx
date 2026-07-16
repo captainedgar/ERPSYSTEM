@@ -49,6 +49,10 @@ const nav: PlatformNavSection[] = [
       { href: '/platform/plans', label: 'Planes' },
       { href: '/platform/billing/invoices', label: 'Facturas' },
       { href: '/platform/billing/payments', label: 'Pagos' },
+      {
+        href: '/platform/billing/plan-change-requests',
+        label: 'Solicitudes de plan',
+      },
     ],
   },
   {

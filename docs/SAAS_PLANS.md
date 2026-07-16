@@ -96,3 +96,13 @@ permiten autenticación y consulta/pago de billing.
 
 Actualmente existen transferencia o depósito manual, links públicos y reportes
 de pago. No existen tarjetas, tokenización, cobro automático ni webhooks.
+# Solicitud y aprobacion
+
+Los usuarios empresariales con permiso `billing.pay` solicitan cambios sin
+modificar directamente su plan. Solo se admite una solicitud `PENDING` por
+empresa. Platform Billing revisa y decide; al aprobar, los nuevos entitlements
+se derivan inmediatamente del plan asignado.
+
+La fase no incluye prorrateo, cobro automatico ni creacion automatica de
+facturas. Una futura pasarela debe usar tokenizacion externa, webhooks firmados
+e idempotencia. Comercia ERP no debe almacenar PAN ni CVV.

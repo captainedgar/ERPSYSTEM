@@ -7,12 +7,14 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import {
   getMyBillingEvents,
+  getCompanyPaymentInstructions,
   getMyEntitlements,
   getMyInvoicePaymentLink,
   getMyInvoices,
   getMyPayments,
   getMySubscription,
   getAvailableCompanyPlans,
+  getMyPlanChangeRequests,
   requestCompanyPlanChange,
   type CompanyBillingEvent,
   type CompanyBillingInvoice,
@@ -20,6 +22,8 @@ import {
   type CompanyBillingSubscription,
   type CompanyEntitlements,
   type CompanyPlanOption,
+  type CompanyPlanChangeRequest,
+  type PaymentInstructions,
 } from '@/lib/company-billing';
 import { hasPermission } from '@/lib/permissions';
 
@@ -38,6 +42,12 @@ export function CompanyBillingManager({
     null,
   );
   const [plans, setPlans] = useState<CompanyPlanOption[]>([]);
+  const [planRequests, setPlanRequests] = useState<CompanyPlanChangeRequest[]>(
+    [],
+  );
+  const [paymentInstructions, setPaymentInstructions] =
+    useState<PaymentInstructions | null>(null);
+  const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -52,6 +62,8 @@ export function CompanyBillingManager({
       getMyBillingEvents(),
       getMyEntitlements(),
       getAvailableCompanyPlans(),
+      getMyPlanChangeRequests(),
+      getCompanyPaymentInstructions(),
     ])
       .then(
         ([
@@ -61,6 +73,8 @@ export function CompanyBillingManager({
           nextEvents,
           nextEntitlements,
           nextPlans,
+          nextPlanRequests,
+          nextPaymentInstructions,
         ]) => {
           if (cancelled) return;
           setSubscription(nextSubscription);
@@ -69,6 +83,8 @@ export function CompanyBillingManager({
           setEvents(nextEvents);
           setEntitlements(nextEntitlements);
           setPlans(nextPlans);
+          setPlanRequests(nextPlanRequests);
+          setPaymentInstructions(nextPaymentInstructions);
           setLoadedAt(Date.now());
         },
       )
@@ -121,20 +137,29 @@ export function CompanyBillingManager({
   async function requestChange(plan: CompanyPlanOption) {
     setError('');
     setMessage('');
+    setRequestingPlan(plan.code);
     try {
       const response = await requestCompanyPlanChange(plan.code);
       setMessage(
         response.message ??
           'Solicitud registrada. Nuestro equipo revisara el cambio.',
       );
+      setPlanRequests(await getMyPlanChangeRequests());
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
           : 'No se pudo solicitar el cambio.',
       );
+    } finally {
+      setRequestingPlan(null);
     }
   }
+
+  const latestPlanRequest = planRequests[0] ?? null;
+  const pendingPlanRequest = planRequests.find(
+    (request) => request.status === 'PENDING',
+  );
 
   if (loading) {
     return (
@@ -343,6 +368,31 @@ export function CompanyBillingManager({
               La solicitud no cambia precios, plan ni pagos automaticamente.
               Platform Admin debe revisarla.
             </p>
+            {latestPlanRequest && (
+              <div
+                className={`mt-4 rounded-lg border p-4 text-sm ${
+                  latestPlanRequest.status === 'PENDING'
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : latestPlanRequest.status === 'APPROVED'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-red-200 bg-red-50 text-red-800'
+                }`}
+              >
+                <p className="font-semibold">
+                  {latestPlanRequest.status === 'PENDING'
+                    ? `Tu solicitud para cambiar a ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode} esta pendiente de revision.`
+                    : latestPlanRequest.status === 'APPROVED'
+                      ? `Tu plan fue actualizado a ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode}.`
+                      : 'Tu solicitud fue rechazada. Contacta a facturacion para mas detalles.'}
+                </p>
+                <p className="mt-1 text-xs">
+                  Solicitada el {formatDateTime(latestPlanRequest.createdAt)}
+                </p>
+                {latestPlanRequest.adminNote && (
+                  <p className="mt-2">{latestPlanRequest.adminNote}</p>
+                )}
+              </div>
+            )}
             <div className="mt-4 grid gap-4 lg:grid-cols-4">
               {plans.map((plan) => (
                 <div
@@ -362,14 +412,22 @@ export function CompanyBillingManager({
                   </p>
                   <Button
                     className="mt-4"
-                    disabled={entitlements?.plan.code === plan.code}
+                    disabled={
+                      entitlements?.plan.code === plan.code ||
+                      Boolean(pendingPlanRequest) ||
+                      requestingPlan !== null
+                    }
                     onClick={() => void requestChange(plan)}
                     type="button"
                     variant="secondary"
                   >
                     {entitlements?.plan.code === plan.code
                       ? 'Plan actual'
-                      : 'Solicitar cambio'}
+                      : pendingPlanRequest
+                        ? 'Solicitud pendiente'
+                        : requestingPlan === plan.code
+                          ? 'Enviando...'
+                          : 'Solicitar cambio'}
                   </Button>
                 </div>
               ))}
@@ -379,7 +437,25 @@ export function CompanyBillingManager({
 
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 text-sm text-blue-900">
-            <h2 className="font-semibold">Instrucciones de pago</h2>
+            <h2 className="font-semibold">Metodos de pago disponibles</h2>
+            <div className="mt-3 grid gap-3">
+              {paymentInstructions?.methods.map((method) => (
+                <div key={method.code}>
+                  <p className="font-semibold">{method.name}</p>
+                  {method.bank && (
+                    <p>
+                      {method.bank} · {method.accountNumber}
+                    </p>
+                  )}
+                  <p className="leading-6">{method.instructions}</p>
+                </div>
+              ))}
+            </div>
+            {paymentInstructions && (
+              <p className="mt-3">
+                Contacto: {paymentInstructions.billingContact.email}
+              </p>
+            )}
             <p className="mt-2 leading-6">
               Usa transferencia o deposito según las instrucciones compartidas
               por Comercia ERP y reporta la referencia mediante el link seguro.
@@ -392,6 +468,7 @@ export function CompanyBillingManager({
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
             <h2 className="font-semibold text-slate-950">Metodos de pago</h2>
+            <p className="mt-2">{paymentInstructions?.card.notice}</p>
             <p className="mt-2">
               Pago con tarjeta y cobro automatico aun no estan habilitados.
             </p>

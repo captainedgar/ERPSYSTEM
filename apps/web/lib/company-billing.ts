@@ -102,6 +102,33 @@ export interface CompanyEntitlements {
   features: string[];
 }
 
+export interface CompanyPlanChangeRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  currentPlanCode?: CompanyPlanOption['code'];
+  currentPlanName?: string;
+  requestedPlanCode?: CompanyPlanOption['code'];
+  requestedPlanName?: string;
+  adminNote?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+}
+
+export interface PaymentInstructions {
+  methods: Array<{
+    code: string;
+    name: string;
+    bank?: string;
+    accountHolder?: string;
+    taxId?: string;
+    accountNumber?: string;
+    currency?: string;
+    instructions: string;
+  }>;
+  billingContact: { email: string; whatsapp: string };
+  card: { available: false; label: string; notice: string };
+}
+
 export function getMySubscription() {
   return apiRequest<CompanyBillingSubscription | null>(
     '/company-billing/subscription',
@@ -136,8 +163,25 @@ export function getAvailableCompanyPlans() {
 }
 
 export function requestCompanyPlanChange(planCode: CompanyPlanOption['code']) {
-  return apiRequest<{ success: true; message?: string }>(
-    '/company-billing/plan-change-request',
-    { method: 'POST', body: JSON.stringify({ planCode }) },
+  return apiRequest<{
+    success: true;
+    id?: string;
+    status?: 'PENDING';
+    message?: string;
+  }>('/company-billing/plan-change-request', {
+    method: 'POST',
+    body: JSON.stringify({ planCode }),
+  });
+}
+
+export function getMyPlanChangeRequests() {
+  return apiRequest<CompanyPlanChangeRequest[]>(
+    '/company-billing/plan-change-requests',
+  );
+}
+
+export function getCompanyPaymentInstructions() {
+  return apiRequest<PaymentInstructions>(
+    '/company-billing/payment-instructions',
   );
 }

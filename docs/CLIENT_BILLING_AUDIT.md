@@ -99,3 +99,24 @@ automático, webhooks o reintentos. No se agregaron campos `cardNumber`, `cvv`,
 - No se mezcló Platform Admin con la sesión empresarial.
 - No se modificó el esquema Prisma.
 - No se borraron datos ni se ejecutaron comandos destructivos.
+# Flujo operativo de cambio de plan
+
+`POST /company-billing/plan-change-request` registra una solicitud con estado
+`PENDING` en el `AuditLog` empresarial. La metadata conserva plan actual, plan
+solicitado, usuario y estado de revision. El plan y el precio no cambian desde
+la sesion empresarial.
+
+`GET /company-billing/plan-change-requests` permite al cliente consultar el
+historial. Solo puede existir una solicitud pendiente por empresa. Platform
+Admin puede aprobarla o rechazarla; el cliente ve `PENDING`, `APPROVED` o
+`REJECTED` en `/settings/billing`.
+
+# Metodos manuales
+
+`GET /company-billing/payment-instructions` publica transferencia, deposito y
+reporte por link publico. Son instrucciones de demo configuradas en codigo y no
+contienen credenciales bancarias reales. Los reportes requieren validacion
+manual.
+
+Tarjetas permanecen marcadas como proximamente. No existen campos para numero
+de tarjeta o CVV, tokenizacion, webhooks ni procesamiento automatico.

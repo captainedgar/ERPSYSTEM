@@ -15,7 +15,9 @@ import {
 } from '@/components/platform-ui';
 import {
   listBillingPayments,
+  listSubscriptionPaymentReports,
   type SubscriptionPayment,
+  type SubscriptionPaymentReport,
   type SubscriptionPaymentMethod,
 } from '@/lib/platform';
 
@@ -23,6 +25,14 @@ export default function PlatformPaymentsPage() {
   const searchParams = useSearchParams();
   const companyId = searchParams.get('companyId');
   const [payments, setPayments] = useState<SubscriptionPayment[]>([]);
+  const [reports, setReports] = useState<
+    Array<
+      SubscriptionPaymentReport & {
+        company: { id: string; name: string; status: string };
+        invoice: { id: string; invoiceNumber: string; status: string };
+      }
+    >
+  >([]);
   const [method, setMethod] = useState<SubscriptionPaymentMethod | 'ALL'>(
     'ALL',
   );
@@ -32,9 +42,12 @@ export default function PlatformPaymentsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void listBillingPayments()
-      .then((nextPayments) => {
-        if (!cancelled) setPayments(nextPayments);
+    void Promise.all([listBillingPayments(), listSubscriptionPaymentReports()])
+      .then(([nextPayments, nextReports]) => {
+        if (!cancelled) {
+          setPayments(nextPayments);
+          setReports(nextReports);
+        }
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -83,6 +96,59 @@ export default function PlatformPaymentsPage() {
             tone="emerald"
             value={platformMoney(total)}
           />
+        </section>
+
+        <section className={`mt-6 ${platformPanelClass}`}>
+          <h2 className="text-lg font-semibold text-slate-950">
+            Reportes de pago pendientes
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Estos reportes son notificaciones manuales y no aprueban pagos
+            automaticamente.
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            {reports.length ? (
+              <table className="w-full text-left text-sm text-slate-700">
+                <thead className="text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th className="py-3">Empresa</th>
+                    <th className="py-3">Factura</th>
+                    <th className="py-3">Referencia</th>
+                    <th className="py-3">Estado</th>
+                    <th className="py-3">Fecha</th>
+                    <th className="py-3 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.map((report) => (
+                    <tr className="border-t border-slate-200" key={report.id}>
+                      <td className="py-3">{report.company.name}</td>
+                      <td className="py-3">
+                        <Link
+                          className={platformLinkClass}
+                          href={`/platform/billing/invoices/${report.invoice.id}`}
+                        >
+                          {report.invoice.invoiceNumber}
+                        </Link>
+                      </td>
+                      <td className="py-3">{report.reference ?? 'N/D'}</td>
+                      <td className="py-3">{report.status}</td>
+                      <td className="py-3">
+                        {new Date(report.reportedAt).toLocaleString('es-DO')}
+                      </td>
+                      <td className="py-3 text-right font-semibold">
+                        {platformMoney(report.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No hay reportes de pago recibidos.
+              </p>
+            )}
+          </div>
         </section>
 
         <section className={`mt-6 ${platformPanelClass}`}>

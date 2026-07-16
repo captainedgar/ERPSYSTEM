@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  Currency,
   SubscriptionInvoiceStatus,
   SubscriptionPaymentLinkStatus,
 } from '@prisma/client';
@@ -10,6 +15,7 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { CompanyEntitlementsService } from '../company-entitlements/company-entitlements.service';
 import {
   STANDARD_SAAS_PLANS,
+  planModules,
   type SaasPlanCode,
 } from '../company-entitlements/saas-plan-entitlements';
 
@@ -56,6 +62,44 @@ const invoiceFields = {
   createdAt: true,
   updatedAt: true,
 };
+
+export const MANUAL_PAYMENT_INSTRUCTIONS = {
+  methods: [
+    {
+      code: 'BANK_TRANSFER',
+      name: 'Transferencia bancaria',
+      bank: 'Banco comercial de referencia',
+      accountHolder: 'Comercia ERP',
+      taxId: 'Disponible al solicitar factura',
+      accountNumber: 'Cuenta terminada en 0000',
+      currency: 'DOP',
+      instructions:
+        'Incluye el numero de factura en la referencia y reporta el pago mediante el link publico.',
+    },
+    {
+      code: 'BANK_DEPOSIT',
+      name: 'Deposito bancario',
+      instructions:
+        'Conserva el comprobante y reporta la referencia para validacion manual.',
+    },
+    {
+      code: 'PUBLIC_PAYMENT_REPORT',
+      name: 'Reporte por link publico',
+      instructions:
+        'El reporte no aprueba el pago automaticamente; Platform Admin debe revisarlo.',
+    },
+  ],
+  billingContact: {
+    email: 'facturacion@comerciaerp.local',
+    whatsapp: 'Disponible mediante soporte comercial',
+  },
+  card: {
+    available: false,
+    label: 'Tarjeta de credito/debito - Proximamente',
+    notice:
+      'El pago con tarjeta se habilitara mediante pasarela tokenizada. Comercia ERP no almacenara numeros de tarjeta ni CVV.',
+  },
+} as const;
 
 @Injectable()
 export class CompanyBillingService {
@@ -153,6 +197,26 @@ export class CompanyBillingService {
     });
   }
 
+  getPaymentInstructions() {
+    return MANUAL_PAYMENT_INSTRUCTIONS;
+  }
+
+  async listPlanChangeRequests(companyId: string) {
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        companyId,
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+        module: 'company_billing',
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return logs.map((log) => this.planChangeResponse(log));
+  }
+
   getEntitlements(companyId: string) {
     return this.entitlements.snapshot(companyId);
   }
@@ -202,7 +266,40 @@ export class CompanyBillingService {
       return { success: true, alreadyCurrent: true, requestedPlan: planCode };
     }
     const requested = STANDARD_SAAS_PLANS[planCode];
-    await this.audit.create({
+    const pending = await this.prisma.auditLog.findFirst({
+      where: {
+        companyId: user.companyId,
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+        module: 'company_billing',
+        metadataJson: { path: ['status'], equals: 'PENDING' },
+      },
+      select: { id: true },
+    });
+    if (pending) {
+      throw new ConflictException(
+        'Ya existe una solicitud de cambio de plan pendiente.',
+      );
+    }
+    const storedPlan = await this.prisma.saasPlan.upsert({
+      where: { name: requested.name },
+      update: {},
+      create: {
+        name: requested.name,
+        description: requested.description,
+        price: requested.price,
+        currency: Currency.DOP,
+        billingInterval: requested.billingInterval,
+        graceDays: requested.graceDays,
+        maxUsers: requested.maxUsers,
+        maxBranches: requested.maxBranches,
+        modules: planModules(requested),
+      },
+      select: { id: true, isActive: true },
+    });
+    if (!storedPlan.isActive) {
+      throw new NotFoundException('El plan solicitado no esta disponible.');
+    }
+    const log = await this.audit.create({
       companyId: user.companyId,
       branchId: user.branchId,
       userId: user.userId,
@@ -211,16 +308,25 @@ export class CompanyBillingService {
       entityType: 'SaasPlan',
       description: `Cambio solicitado de ${current.plan.name} a ${requested.name}`,
       metadata: {
+        status: 'PENDING',
+        requestedAt: new Date().toISOString(),
         currentPlanCode: current.plan.code,
+        currentPlanId: current.plan.id,
+        currentPlanName: current.plan.name,
         requestedPlanCode: requested.code,
+        requestedPlanId: storedPlan.id,
+        requestedPlanName: requested.name,
       },
     });
     return {
       success: true,
       alreadyCurrent: false,
+      id: log.id,
+      status: 'PENDING',
       requestedPlan: requested.code,
       message:
-        'Nuestro equipo revisara tu solicitud y actualizara la suscripcion.',
+        'Solicitud enviada. El equipo de Comercia ERP revisara el cambio de plan.',
+      createdAt: log.createdAt,
     };
   }
 
@@ -258,5 +364,35 @@ export class CompanyBillingService {
       );
     }
     return link;
+  }
+
+  private planChangeResponse(log: {
+    id: string;
+    description: string;
+    metadataJson: unknown;
+    createdAt: Date;
+    user?: { id: string; name: string; email: string } | null;
+  }) {
+    const metadata =
+      log.metadataJson &&
+      typeof log.metadataJson === 'object' &&
+      !Array.isArray(log.metadataJson)
+        ? (log.metadataJson as Record<string, unknown>)
+        : {};
+    return {
+      id: log.id,
+      status: typeof metadata.status === 'string' ? metadata.status : 'PENDING',
+      currentPlanCode: metadata.currentPlanCode,
+      currentPlanName: metadata.currentPlanName,
+      requestedPlanCode: metadata.requestedPlanCode,
+      requestedPlanName: metadata.requestedPlanName,
+      adminNote:
+        typeof metadata.adminNote === 'string' ? metadata.adminNote : null,
+      reviewedAt:
+        typeof metadata.reviewedAt === 'string' ? metadata.reviewedAt : null,
+      requestedBy: log.user ?? null,
+      createdAt: log.createdAt,
+      description: log.description,
+    };
   }
 }

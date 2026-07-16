@@ -172,10 +172,28 @@ export default function PublicInvoicePaymentPage() {
               </div>
 
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                Realiza el pago por transferencia bancaria o el metodo acordado
-                con Comercia ERP. Luego reporta la referencia para que el equipo
-                de plataforma lo confirme manualmente.
+                <p className="font-semibold">Instrucciones de pago manual</p>
+                <div className="mt-2 grid gap-2">
+                  {link.paymentInstructions.methods.map((method) => (
+                    <div key={method.code}>
+                      <p className="font-medium">{method.name}</p>
+                      {method.bank && (
+                        <p>
+                          {method.bank} · {method.accountNumber}
+                        </p>
+                      )}
+                      <p>{method.instructions}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2">
+                  Contacto: {link.paymentInstructions.billingContact.email}
+                </p>
               </div>
+
+              <p className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                {link.paymentInstructions.card.notice}
+              </p>
 
               <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-700">
                 Documento interno de cobro SaaS. No valido como comprobante

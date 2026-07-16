@@ -340,6 +340,125 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(manipulated.status).toBe(400);
   });
 
+  it('operates plan change requests and exposes manual payment instructions', async () => {
+    const company = await registerCompany('plan-review', 'BASIC');
+    const admin = await createPlatformUser(
+      `plan-review-${registrationCounter}@platform.test`,
+      PlatformRole.BILLING_ADMIN,
+    );
+    const platformSession = await platformLogin(admin.email);
+    const roles = await getRoles(company.accessToken);
+    const seller = await createUser(
+      company.accessToken,
+      findRole(roles, UserRole.SELLER).id,
+      company.branch.id,
+      'plan-review-seller',
+    );
+    const sellerSession = await login(seller.email);
+    const sellerRequest = await http<unknown>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PRO' },
+      sellerSession.accessToken,
+    );
+
+    const requested = await http<{
+      id: string;
+      status: string;
+      message: string;
+    }>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PRO' },
+      company.accessToken,
+    );
+    const duplicate = await http<unknown>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PREMIUM' },
+      company.accessToken,
+    );
+    const companyRequests = await http<Array<{ id: string; status: string }>>(
+      'GET',
+      '/company-billing/plan-change-requests',
+      undefined,
+      company.accessToken,
+    );
+    const platformRequests = await http<
+      Array<{ id: string; status: string; companyId: string }>
+    >(
+      'GET',
+      '/platform/billing/plan-change-requests',
+      undefined,
+      platformSession.body.accessToken,
+    );
+    const approved = await http<{
+      request: { status: string };
+      message: string;
+    }>(
+      'POST',
+      `/platform/billing/plan-change-requests/${requested.body.id}/approve`,
+      { adminNote: 'Aprobado para prueba E2E' },
+      platformSession.body.accessToken,
+    );
+    const subscription = await prisma.companySubscription.findUniqueOrThrow({
+      where: { companyId: company.company.id },
+      include: { plan: true },
+    });
+    const secondRequest = await http<{ id: string }>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PREMIUM' },
+      company.accessToken,
+    );
+    const rejected = await http<{ request: { status: string } }>(
+      'POST',
+      `/platform/billing/plan-change-requests/${secondRequest.body.id}/reject`,
+      { adminNote: 'Requiere revision comercial' },
+      platformSession.body.accessToken,
+    );
+    const instructions = await http<{
+      methods: Array<{ code: string }>;
+      card: { available: boolean; notice: string };
+    }>(
+      'GET',
+      '/company-billing/payment-instructions',
+      undefined,
+      company.accessToken,
+    );
+
+    expect(sellerRequest.status).toBe(403);
+    expect(requested.status).toBe(201);
+    expect(requested.body.status).toBe('PENDING');
+    expect(requested.body.message).toContain('Solicitud enviada');
+    expect(duplicate.status).toBe(409);
+    expect(companyRequests.body[0]).toMatchObject({
+      id: requested.body.id,
+      status: 'PENDING',
+    });
+    expect(platformRequests.body).toContainEqual(
+      expect.objectContaining({
+        id: requested.body.id,
+        companyId: company.company.id,
+        status: 'PENDING',
+      }),
+    );
+    expect(approved.status).toBe(201);
+    expect(approved.body.request.status).toBe('APPROVED');
+    expect(subscription.plan.name).toBe('Pro');
+    expect(rejected.status).toBe(201);
+    expect(rejected.body.request.status).toBe('REJECTED');
+    expect(instructions.status).toBe(200);
+    expect(instructions.body.methods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'BANK_TRANSFER' }),
+        expect.objectContaining({ code: 'PUBLIC_PAYMENT_REPORT' }),
+      ]),
+    );
+    expect(instructions.body.card.available).toBe(false);
+    expect(instructions.body.card.notice).not.toMatch(/CVV.*input|cardNumber/i);
+  });
+
   it('logs in valid users and rejects invalid credentials', async () => {
     const registered = await registerCompany('login');
     const valid = await http<AuthResponse>('POST', '/auth/login', {
