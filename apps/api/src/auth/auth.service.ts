@@ -13,8 +13,9 @@ import type {
   AuthUser,
   RequestContext,
 } from '../common/interfaces/auth-user.interface';
+import { PERMISSIONS } from '../permissions/permission-definitions';
 import { PrismaService } from '../prisma/prisma.service';
-import { roleAllowsPermission, RolesService } from '../roles/roles.service';
+import { permissionCodesForRole, RolesService } from '../roles/roles.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
@@ -44,10 +45,6 @@ const publicUserSelect = {
       id: true,
       code: true,
       name: true,
-      rolePermissions: {
-        orderBy: { permission: { code: 'asc' } },
-        select: { permission: { select: { code: true } } },
-      },
     },
   },
   branch: { select: { id: true, name: true, code: true } },
@@ -239,9 +236,10 @@ export class AuthService {
         code: role.code,
         name: role.name,
       },
-      permissions: role.rolePermissions
-        .map(({ permission }) => permission.code)
-        .filter((permission) => roleAllowsPermission(role.code, permission)),
+      permissions: permissionCodesForRole(
+        role.code,
+        PERMISSIONS.map(([code]) => code),
+      ),
     };
   }
 

@@ -166,6 +166,9 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(registered.branch.isMain).toBe(true);
     expect(registered.user.branchId).toBe(registered.branch.id);
     expect(registered.user.role.code).toBe(UserRole.OWNER);
+    expect(registered.user.permissions).toEqual(
+      expect.arrayContaining(['users.create', 'roles.assign']),
+    );
     expectNoSensitiveFields(registered);
 
     const [company, mainBranch, owner, roles, settings, session] =
@@ -252,8 +255,8 @@ describe('Identity and multi-company isolation (e2e)', () => {
       orderBy: { code: 'asc' },
       select: { code: true },
     });
-    expect(authenticated.body.permissions).toEqual(
-      expectedPermissions.map(({ code }) => code),
+    expect([...authenticated.body.permissions].sort()).toEqual(
+      expectedPermissions.map(({ code }) => code).sort(),
     );
     expectNoSensitiveFields(authenticated.body);
   });
@@ -420,6 +423,18 @@ describe('Identity and multi-company isolation (e2e)', () => {
 
     const branchesCreate = await prisma.permission.findUniqueOrThrow({
       where: { code: 'branches.create' },
+    });
+    const adminMissingPermissions = await prisma.permission.findMany({
+      where: { code: { in: ['users.create', 'roles.assign'] } },
+      select: { id: true },
+    });
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: adminRole.id,
+        permissionId: {
+          in: adminMissingPermissions.map(({ id }) => id),
+        },
+      },
     });
     await prisma.rolePermission.create({
       data: {

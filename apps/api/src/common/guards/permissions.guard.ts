@@ -37,14 +37,14 @@ export class PermissionsGuard implements CanActivate {
     ) {
       throw new ForbiddenException('Insufficient permissions');
     }
-    const count = await this.prisma.rolePermission.count({
+    const activeRole = await this.prisma.role.count({
       where: {
-        roleId: request.user.roleId,
-        role: { companyId: request.user.companyId, isActive: true },
-        permission: { code: { in: required } },
+        id: request.user.roleId,
+        companyId: request.user.companyId,
+        isActive: true,
       },
     });
-    if (count !== required.length) {
+    if (!activeRole) {
       throw new ForbiddenException('Insufficient permissions');
     }
     return true;

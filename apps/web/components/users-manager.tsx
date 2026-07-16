@@ -134,6 +134,12 @@ export function UsersManager() {
         </header>
 
         {error && <ErrorMessage message={error} />}
+        {canCreate && !canAssignRoles && (
+          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800">
+            No puedes crear usuarios porque tu rol no tiene permiso para asignar
+            roles. Solicita al dueño sincronizar permisos.
+          </div>
+        )}
 
         <section className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">

@@ -72,3 +72,27 @@ La matriz se aplica en tres puntos:
 1. Creación de roles para empresas nuevas.
 2. Techo efectivo aplicado por el guard y por `/auth/me`.
 3. Sincronización idempotente del seed demo para agregar la matriz vigente. Las asociaciones históricas sobrantes no se borran por la política de seed no destructivo y quedan neutralizadas por el techo efectivo.
+
+## Sincronización para empresas existentes
+
+La fuente técnica compartida está en:
+
+`apps/api/src/roles/company-role-permissions.json`
+
+API, seed demo y sincronización consumen esta misma matriz. Para completar asociaciones persistidas de empresas creadas con una versión anterior:
+
+```powershell
+$env:CONFIRM_SYNC_RBAC="true"; npm run rbac:sync-company-roles
+```
+
+El comando:
+
+- procesa únicamente empresas y roles empresariales;
+- crea roles estándar faltantes;
+- agrega permisos canónicos faltantes;
+- informa asociaciones incompatibles;
+- no modifica Platform Admin;
+- no borra asociaciones, usuarios, empresas ni datos operativos;
+- puede ejecutarse repetidamente.
+
+Para roles estándar, `/auth/me` y los guards usan directamente la matriz canónica. Por tanto, un permiso canónico faltante en `RolePermission` sigue siendo efectivo, mientras que uno histórico incompatible permanece neutralizado.

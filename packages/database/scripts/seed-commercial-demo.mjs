@@ -31,12 +31,22 @@ import {
   UserStatus,
 } from '@prisma/client';
 import { hash } from 'bcrypt';
+import { readFileSync } from 'node:fs';
 
 const prisma = new PrismaClient();
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const DEMO = 'comercia-demo-repuestos';
 const COMPANY_ID = `demo-company-${DEMO}`;
 const PASSWORD = 'Demo12345!';
+const canonicalRolePermissions = JSON.parse(
+  readFileSync(
+    new URL(
+      '../../../apps/api/src/roles/company-role-permissions.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+);
 
 const roleNames = {
   OWNER: 'Dueño',
@@ -47,187 +57,12 @@ const roleNames = {
   ACCOUNTING: 'Contabilidad',
 };
 
-const limitedPermissions = {
-  CASHIER: [
-    'branches.view',
-    'products.view',
-    'services.view',
-    'inventory.view',
-    'inventory.view_low_stock',
-    'customers.view',
-    'customers.create',
-    'pos.access',
-    'pos.validate_cart',
-    'sales.view',
-    'sales.create',
-    'sales.view_detail',
-    'internal_documents.view',
-    'internal_documents.create',
-    'internal_documents.print',
-    'fiscal.documents.view',
-    'cash.view',
-    'cash.open',
-    'cash.close',
-    'cash.manual_movement',
-    'cash.view_sessions',
-    'reports.view',
-    'reports.sales',
-    'reports.cash',
-    'data_export.view',
-    'data_export.sales',
-    'data_export.cash',
-    'financial_dashboard.view',
-    'financial_dashboard.sales',
-    'financial_dashboard.cash',
-  ],
-  SELLER: [
-    'branches.view',
-    'products.view',
-    'services.view',
-    'inventory.view',
-    'inventory.view_low_stock',
-    'customers.view',
-    'customers.create',
-    'pos.access',
-    'pos.validate_cart',
-    'sales.view',
-    'sales.create',
-    'sales.view_detail',
-    'internal_documents.view',
-    'internal_documents.create',
-    'internal_documents.print',
-    'cash.view',
-    'reports.view',
-    'reports.sales',
-    'data_export.view',
-    'data_export.sales',
-    'financial_dashboard.view',
-    'financial_dashboard.sales',
-  ],
-  WAREHOUSE: [
-    'branches.view',
-    'categories.view',
-    'categories.create',
-    'categories.update',
-    'brands.view',
-    'brands.create',
-    'brands.update',
-    'units.view',
-    'units.create',
-    'units.update',
-    'products.view',
-    'products.create',
-    'products.update',
-    'products.import',
-    'product_compatibility.view',
-    'product_compatibility.manage',
-    'inventory.view',
-    'inventory.adjust',
-    'inventory.transfer',
-    'inventory.view_movements',
-    'inventory.view_low_stock',
-    'reports.view',
-    'reports.inventory',
-    'data_export.view',
-    'data_export.products',
-    'data_export.inventory',
-    'financial_dashboard.view',
-    'financial_dashboard.inventory',
-  ],
-  ACCOUNTING: [
-    'companies.view',
-    'branches.view',
-    'products.view',
-    'services.view',
-    'inventory.view',
-    'inventory.view_movements',
-    'inventory.view_low_stock',
-    'customers.view',
-    'customers.update',
-    'sales.view',
-    'sales.view_detail',
-    'internal_documents.view',
-    'internal_documents.print',
-    'internal_documents.void',
-    'fiscal.settings.view',
-    'fiscal.settings.update',
-    'fiscal.providers.view',
-    'fiscal.providers.configure',
-    'fiscal.documents.view',
-    'fiscal.documents.create',
-    'fiscal.documents.send',
-    'fiscal.documents.retry',
-    'fiscal.documents.view_events',
-    'fiscal.documents.view_errors',
-    'cash.view',
-    'cash.view_sessions',
-    'reports.view',
-    'reports.sales',
-    'reports.cash',
-    'reports.documents',
-    'reports.customers',
-    'data_export.view',
-    'data_export.customers',
-    'data_export.sales',
-    'data_export.cash',
-    'data_export.documents',
-    'financial_dashboard.view',
-    'financial_dashboard.sales',
-    'financial_dashboard.cash',
-    'financial_dashboard.customers',
-  ],
-};
-
-const companyManagementPermissions = [
-  'companies.update',
-  'branches.create',
-  'branches.update',
-  'branches.change_status',
-  'branches.set_main',
-  'branches.assign_users',
-  'users.view',
-  'users.create',
-  'users.update',
-  'users.disable',
-  'roles.view',
-  'roles.assign',
-  'settings.view',
-  'settings.update',
-  'categories.disable',
-  'brands.disable',
-  'units.disable',
-  'products.disable',
-  'services.create',
-  'services.update',
-  'services.disable',
-  'sales.cancel',
-  'financial_dashboard.branches',
-];
-
-const ownerOnlyPermissions = [
-  'data_export.full_backup',
-  'fiscal.settings.update',
-  'fiscal.providers.configure',
-  'fiscal.documents.create',
-  'fiscal.documents.send',
-  'fiscal.documents.retry',
-];
-
 const basePermissionCodes = [
   ...new Set([
-    ...Object.values(limitedPermissions).flat(),
-    ...companyManagementPermissions,
-    ...ownerOnlyPermissions,
+    ...Object.values(canonicalRolePermissions).flat(),
+    'data_export.full_backup',
   ]),
 ].sort();
-
-const adminDeniedPermissions = new Set([
-  'data_export.full_backup',
-  'fiscal.settings.update',
-  'fiscal.providers.configure',
-  'fiscal.documents.send',
-  'fiscal.documents.retry',
-]);
 
 const branchesData = [
   [
@@ -666,13 +501,9 @@ async function seedIdentity(tx) {
     const allowed =
       code === UserRole.OWNER
         ? permissions
-        : code === UserRole.ADMIN
-          ? permissions.filter(
-              (permission) => !adminDeniedPermissions.has(permission.code),
-            )
-          : permissions.filter((permission) =>
-              limitedPermissions[code]?.includes(permission.code),
-            );
+        : permissions.filter((permission) =>
+            canonicalRolePermissions[code]?.includes(permission.code),
+          );
     for (const permission of allowed) {
       await tx.rolePermission.upsert({
         where: {

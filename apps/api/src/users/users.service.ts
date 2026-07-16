@@ -249,14 +249,14 @@ export class UsersService {
     if (!roleAllowsPermission(user.roleCode, permission)) {
       throw new ForbiddenException('Insufficient permissions');
     }
-    const assigned = await this.prisma.rolePermission.count({
+    const activeRole = await this.prisma.role.count({
       where: {
-        roleId: user.roleId,
-        role: { companyId: user.companyId, isActive: true },
-        permission: { code: permission },
+        id: user.roleId,
+        companyId: user.companyId,
+        isActive: true,
       },
     });
-    if (!assigned) {
+    if (!activeRole) {
       throw new ForbiddenException('Insufficient permissions');
     }
   }

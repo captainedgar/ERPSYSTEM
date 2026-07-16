@@ -199,3 +199,25 @@ Se validaron especialmente `/branches`, `/branches/:id`, `/branches/:id/users`, 
 
 - Los roles continúan siendo predefinidos; no existe editor de permisos personalizados.
 - Cualquier futura ampliación del catálogo debe actualizar la matriz canónica y este documento.
+
+## Sincronización de permisos RBAC para empresas existentes
+
+Se detectó que empresas registradas antes de incorporar `roles.assign` podían conservar un ADMIN sin la asociación persistida necesaria. El seed demo no resolvía esas empresas porque solo procesa la compañía demo.
+
+La matriz se centralizó en `apps/api/src/roles/company-role-permissions.json`. El registro de empresas, `/auth/me`, guards, seed y script de sincronización usan ahora la misma fuente.
+
+Comando:
+
+```powershell
+$env:CONFIRM_SYNC_RBAC="true"; npm run rbac:sync-company-roles
+```
+
+Primera ejecución validada:
+
+- 4 empresas procesadas.
+- 24 roles procesados.
+- 138 asociaciones faltantes agregadas.
+- 14 asociaciones incompatibles detectadas y neutralizadas.
+- 0 acciones destructivas.
+
+La segunda ejecución agregó 0 permisos, confirmando idempotencia.
