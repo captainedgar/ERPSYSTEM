@@ -1377,6 +1377,7 @@ model SubscriptionPayment {
   currency                Currency                  @default(DOP)
   method                  SubscriptionPaymentMethod
   reference               String?
+  providerCaptureId       String?                   @unique
   notes                   String?
   paidAt                  DateTime
   createdByPlatformUserId String?
@@ -1554,6 +1555,13 @@ model PaymentCheckoutSession {
   status              PaymentCheckoutStatus @default(PENDING)
   amount              Decimal               @db.Decimal(12, 2)
   currency            Currency              @default(DOP)
+  invoiceAmount       Decimal               @default(0) @db.Decimal(12, 2)
+  invoiceCurrency     Currency              @default(DOP)
+  providerAmount      Decimal?              @db.Decimal(12, 2)
+  providerCurrency    String?
+  exchangeRate        Decimal?              @db.Decimal(12, 6)
+  exchangeRateSource  String?
+  exchangeRateCapturedAt DateTime?
   checkoutUrl         String?
   expiresAt           DateTime?
   paidAt              DateTime?

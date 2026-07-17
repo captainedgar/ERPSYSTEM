@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MANUAL_PAYMENT_INSTRUCTIONS } from '../company-billing/company-billing.service';
+import { PaymentGatewayService } from '../company-billing/payment-gateway.service';
 import { PlatformAuditService } from './platform-audit.service';
 import {
   CreateSaasPlanDto,
@@ -97,6 +98,7 @@ export class PlatformBillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: PlatformAuditService,
+    private readonly gateway: PaymentGatewayService,
   ) {}
 
   listPlans() {
@@ -116,12 +118,13 @@ export class PlatformBillingService {
     return [
       {
         provider: 'PAYPAL_CHECKOUT',
-        environment: process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox',
+        environment: 'sandbox',
         configured: Boolean(
           process.env.PAYPAL_CLIENT_ID &&
           process.env.PAYPAL_CLIENT_SECRET &&
           process.env.APP_PUBLIC_URL &&
-          process.env.API_PUBLIC_URL,
+          process.env.API_PUBLIC_URL &&
+          process.env.PAYPAL_ENV !== 'live',
         ),
         webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
         appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
@@ -135,6 +138,56 @@ export class PlatformBillingService {
         lastTestAt: null,
       },
     ];
+  }
+
+  async testPayPalConnection(
+    user: PlatformAuthUser,
+    context: PlatformRequestContext,
+  ) {
+    if (user.role !== PlatformRole.SUPER_ADMIN)
+      throw new ForbiddenException('Solo SUPER_ADMIN puede probar PayPal.');
+    const result = await this.gateway.testConnection();
+    await this.audit.create({
+      user,
+      action: 'PAYPAL_PROVIDER_CONNECTION_TESTED',
+      module: 'platform_billing',
+      entityType: 'PaymentProvider',
+      entityId: 'PAYPAL_CHECKOUT',
+      description: result.reachable
+        ? 'Conexion PayPal Sandbox probada correctamente'
+        : 'Prueba de conexion PayPal Sandbox fallida',
+      metadata: {
+        configured: result.configured,
+        reachable: result.reachable,
+        environment: result.environment,
+        testedAt: result.testedAt,
+        error: result.error,
+      },
+      ...context,
+    });
+    return result;
+  }
+
+  async reconcilePayPalCheckouts(
+    user: PlatformAuthUser,
+    context: PlatformRequestContext,
+  ) {
+    if (user.role !== PlatformRole.SUPER_ADMIN)
+      throw new ForbiddenException(
+        'Solo SUPER_ADMIN puede reconciliar PayPal.',
+      );
+    const result = await this.gateway.reconcileExpiredCheckouts();
+    await this.audit.create({
+      user,
+      action: 'PAYPAL_PROVIDER_CHECKOUTS_RECONCILED',
+      module: 'platform_billing',
+      entityType: 'PaymentProvider',
+      entityId: 'PAYPAL_CHECKOUT',
+      description: 'Checkouts PayPal pendientes vencidos reconciliados',
+      metadata: result,
+      ...context,
+    });
+    return result;
   }
 
   async listPlanChangeRequests(

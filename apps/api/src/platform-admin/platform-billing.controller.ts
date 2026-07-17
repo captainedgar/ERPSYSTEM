@@ -152,6 +152,22 @@ export class PlatformBillingController {
     return this.billing.paymentProviders();
   }
 
+  @Post('billing/payment-providers/paypal/test-connection')
+  testPayPalConnection(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Req() request: Request,
+  ) {
+    return this.billing.testPayPalConnection(user, requestContext(request));
+  }
+
+  @Post('billing/payment-providers/paypal/reconcile')
+  reconcilePayPalCheckouts(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Req() request: Request,
+  ) {
+    return this.billing.reconcilePayPalCheckouts(user, requestContext(request));
+  }
+
   @Get('billing/plan-change-requests/:id')
   getPlanChangeRequest(@Param('id') id: string) {
     return this.billing.getPlanChangeRequest(id);

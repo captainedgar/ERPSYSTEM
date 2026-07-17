@@ -477,6 +477,18 @@ export function listPaymentProviders() {
   >('/platform/billing/payment-providers');
 }
 
+export function testPayPalConnection() {
+  return platformRequest<{
+    configured: boolean;
+    reachable: boolean;
+    environment: 'sandbox';
+    testedAt: string;
+    error?: string | null;
+  }>('/platform/billing/payment-providers/paypal/test-connection', {
+    method: 'POST',
+  });
+}
+
 export function getPlanChangeRequest(id: string) {
   return platformRequest<PlatformPlanChangeRequest>(
     `/platform/billing/plan-change-requests/${id}`,

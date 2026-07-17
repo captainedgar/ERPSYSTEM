@@ -56,7 +56,7 @@ export function CompanyBillingManager({
   const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
   const [cancellingRequest, setCancellingRequest] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(initialPayPalReturnMessage);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState(0);
@@ -694,4 +694,16 @@ function daysRemaining(value: string, now: number) {
 }
 function limitText(limit: number | null, label: string) {
   return limit === null ? `${label} personalizadas` : `${limit} ${label}`;
+}
+
+function initialPayPalReturnMessage() {
+  if (typeof window === 'undefined') return '';
+  const paypalStatus = new URLSearchParams(window.location.search).get(
+    'paypal',
+  );
+  if (paypalStatus === 'cancel')
+    return 'Cancelaste el checkout en PayPal. No se aplico ningun pago.';
+  if (paypalStatus === 'return')
+    return 'Volviste desde PayPal. El plan se aplicara solo cuando PayPal confirme el pago.';
+  return '';
 }

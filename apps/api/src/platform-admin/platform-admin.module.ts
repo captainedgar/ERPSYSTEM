@@ -12,6 +12,7 @@ import {
   PublicSubscriptionPaymentLinkController,
 } from './platform-billing.controller';
 import { PlatformBillingService } from './platform-billing.service';
+import { PaymentGatewayService } from '../company-billing/payment-gateway.service';
 
 @Module({
   imports: [JwtModule.register({})],
@@ -27,6 +28,7 @@ import { PlatformBillingService } from './platform-billing.service';
     PlatformAdminService,
     PlatformAuditService,
     PlatformBillingService,
+    PaymentGatewayService,
   ],
 })
 export class PlatformAdminModule {}

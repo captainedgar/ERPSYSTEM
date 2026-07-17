@@ -13,18 +13,62 @@ import {
   PaymentCheckoutStatus,
   PaymentProvider,
   PaymentWebhookStatus,
+  Prisma,
   SubscriptionEventType,
   SubscriptionInvoiceStatus,
   SubscriptionPaymentMethod,
 } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'node:crypto';
+import { PrismaService } from '../prisma/prisma.service';
 
 type PayPalEvent = {
   id?: string;
   event_type?: string;
-  resource?: { id?: string };
+  resource?: {
+    id?: string;
+    amount?: { currency_code?: string; value?: string };
+  };
 };
+
+type CheckoutWithRelations = Prisma.PaymentCheckoutSessionGetPayload<{
+  include: { invoice: true; planChangeRequest: true };
+}>;
+
+const SUPPORTED_PAYPAL_CURRENCIES = [
+  'AUD',
+  'BRL',
+  'CAD',
+  'CNY',
+  'CZK',
+  'DKK',
+  'EUR',
+  'HKD',
+  'HUF',
+  'ILS',
+  'JPY',
+  'MYR',
+  'MXN',
+  'TWD',
+  'NZD',
+  'NOK',
+  'PHP',
+  'PLN',
+  'GBP',
+  'SGD',
+  'SEK',
+  'CHF',
+  'THB',
+  'USD',
+] as const;
+
+const PAYPAL_EVENTS = [
+  'PAYMENT.CAPTURE.COMPLETED',
+  'PAYMENT.CAPTURE.DENIED',
+  'PAYMENT.CAPTURE.PENDING',
+  'PAYMENT.CAPTURE.REFUNDED',
+  'PAYMENT.CAPTURE.REVERSED',
+  'CHECKOUT.PAYMENT-APPROVAL.REVERSED',
+] as const;
 
 @Injectable()
 export class PaymentGatewayService {
@@ -35,48 +79,26 @@ export class PaymentGatewayService {
       process.env.PAYPAL_CHECKOUT_CURRENCY ?? 'DOP'
     ).toUpperCase();
     const dopUsdRate = Number(process.env.PAYPAL_DOP_USD_RATE);
-    const currencySupported = [
-      'AUD',
-      'BRL',
-      'CAD',
-      'CNY',
-      'CZK',
-      'DKK',
-      'EUR',
-      'HKD',
-      'HUF',
-      'ILS',
-      'JPY',
-      'MYR',
-      'MXN',
-      'TWD',
-      'NZD',
-      'NOK',
-      'PHP',
-      'PLN',
-      'GBP',
-      'SGD',
-      'SEK',
-      'CHF',
-      'THB',
-      'USD',
-    ].includes(checkoutCurrency);
     const configured = Boolean(
       process.env.PAYPAL_CLIENT_ID &&
       process.env.PAYPAL_CLIENT_SECRET &&
       process.env.APP_PUBLIC_URL &&
       process.env.API_PUBLIC_URL,
     );
+    const sandboxOnly = process.env.PAYPAL_ENV !== 'live';
     const conversionConfigured =
       checkoutCurrency === 'USD' &&
       Number.isFinite(dopUsdRate) &&
       dopUsdRate > 0;
-    const currencyReady = currencySupported && conversionConfigured;
-    const onlinePaymentsEnabled = configured && currencyReady;
+    const currencyReady =
+      SUPPORTED_PAYPAL_CURRENCIES.includes(
+        checkoutCurrency as (typeof SUPPORTED_PAYPAL_CURRENCIES)[number],
+      ) && conversionConfigured;
+    const onlinePaymentsEnabled = configured && sandboxOnly && currencyReady;
     return {
       provider: 'PAYPAL',
-      environment: process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox',
-      configured,
+      environment: 'sandbox' as const,
+      configured: configured && sandboxOnly,
       onlinePaymentsEnabled,
       webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
       appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
@@ -84,12 +106,48 @@ export class PaymentGatewayService {
       checkoutCurrency,
       currencySupported: currencyReady,
       conversionConfigured,
-      message: !configured
-        ? 'Pago online no configurado. Contacta a facturación o usa transferencia manual.'
-        : !currencyReady
-          ? 'La moneda actual no está disponible para PayPal. Contacta facturación.'
-          : 'Pago online disponible con PayPal.',
+      sandboxOnly,
+      message: !sandboxOnly
+        ? 'PayPal Live no esta habilitado en esta fase. Configure PAYPAL_ENV=sandbox.'
+        : !configured
+          ? 'Pago online no configurado. Contacta a facturacion o usa transferencia manual.'
+          : !currencyReady
+            ? 'La moneda actual no esta disponible para PayPal. Contacta facturacion.'
+            : 'Pago online disponible con PayPal.',
     };
+  }
+
+  async testConnection() {
+    const configuration = this.configuration();
+    const testedAt = new Date();
+    if (!configuration.configured) {
+      return {
+        configured: false,
+        reachable: false,
+        environment: configuration.environment,
+        testedAt,
+        error: configuration.message,
+      };
+    }
+    try {
+      await this.accessToken();
+      return {
+        configured: true,
+        reachable: true,
+        environment: configuration.environment,
+        testedAt,
+        error: null,
+      };
+    } catch {
+      return {
+        configured: true,
+        reachable: false,
+        environment: configuration.environment,
+        testedAt,
+        error:
+          'No se pudo autenticar con PayPal Sandbox. Verifique credenciales y conectividad.',
+      };
+    }
   }
 
   async createForInvoice(
@@ -148,9 +206,11 @@ export class PaymentGatewayService {
       },
     });
     if (reusable?.checkoutUrl) return reusable;
-    const providerAmount = invoice.balance
-      .div(Number(process.env.PAYPAL_DOP_USD_RATE))
-      .toDecimalPlaces(2);
+    const exchangeRate = new Prisma.Decimal(
+      process.env.PAYPAL_DOP_USD_RATE ?? '0',
+    );
+    const providerAmount = invoice.balance.div(exchangeRate).toDecimalPlaces(2);
+    const exchangeRateCapturedAt = new Date();
     const accessToken = await this.accessToken();
     const response = await fetch(`${this.baseUrl()}/v2/checkout/orders`, {
       method: 'POST',
@@ -186,7 +246,7 @@ export class PaymentGatewayService {
           ? 'PAYMENT_CURRENCY_NOT_SUPPORTED'
           : 'PAYMENT_CHECKOUT_FAILED',
         currencyRejected
-          ? 'La moneda actual no está disponible para PayPal. Contacta facturación.'
+          ? 'La moneda actual no esta disponible para PayPal. Contacta facturacion.'
           : 'No se pudo iniciar el checkout. Intenta nuevamente o contacta soporte.',
         currencyRejected
           ? HttpStatus.UNPROCESSABLE_ENTITY
@@ -212,6 +272,13 @@ export class PaymentGatewayService {
         providerSessionId: order.id,
         amount: invoice.balance,
         currency: invoice.currency,
+        invoiceAmount: invoice.balance,
+        invoiceCurrency: invoice.currency,
+        providerAmount,
+        providerCurrency: configuration.checkoutCurrency,
+        exchangeRate,
+        exchangeRateSource: 'MANUAL_ENV',
+        exchangeRateCapturedAt,
         checkoutUrl,
         expiresAt: new Date(Date.now() + 3_600_000),
       },
@@ -244,9 +311,9 @@ export class PaymentGatewayService {
     payload: PayPalEvent,
   ) {
     if (!payload.id || !payload.event_type)
-      throw new UnauthorizedException('Webhook PayPal inválido.');
+      throw new UnauthorizedException('Webhook PayPal invalido.');
     const valid = await this.verifyWebhook(headers, payload);
-    if (!valid) throw new UnauthorizedException('Firma PayPal inválida.');
+    if (!valid) throw new UnauthorizedException('Firma PayPal invalida.');
     const existing = await this.prisma.paymentWebhookEvent.findUnique({
       where: {
         provider_eventId: {
@@ -264,100 +331,183 @@ export class PaymentGatewayService {
         payload,
       },
     });
-    if (payload.event_type !== 'PAYMENT.CAPTURE.COMPLETED') {
-      await this.prisma.paymentWebhookEvent.update({
-        where: { id: event.id },
-        data: {
-          status: PaymentWebhookStatus.PROCESSED,
-          processedAt: new Date(),
-        },
-      });
+    if (!PAYPAL_EVENTS.includes(payload.event_type as never)) {
+      await this.markWebhookProcessed(event.id);
       return { received: true };
     }
     const orderId = await this.orderIdForCapture(payload.resource?.id);
-    const session = await this.prisma.paymentCheckoutSession.findFirst({
-      where: { providerOrderId: orderId },
-      include: { invoice: true, planChangeRequest: true },
-    });
+    const session = await this.findSessionByOrderId(orderId);
     if (!session) throw new NotFoundException('Checkout PayPal no reconocido.');
+    if (payload.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+      await this.applyCompletedCapture(event.id, session, payload, orderId);
+      return { received: true, applied: true };
+    }
+    await this.applyNonCompletedCapture(event.id, session, payload.event_type);
+    return { received: true, applied: false };
+  }
+
+  async reconcileExpiredCheckouts() {
+    const result = await this.prisma.paymentCheckoutSession.updateMany({
+      where: {
+        status: PaymentCheckoutStatus.PENDING,
+        expiresAt: { lte: new Date() },
+      },
+      data: { status: PaymentCheckoutStatus.EXPIRED },
+    });
+    return { expired: result.count };
+  }
+
+  private async applyCompletedCapture(
+    eventId: string,
+    session: CheckoutWithRelations,
+    payload: PayPalEvent,
+    orderId: string,
+  ) {
+    const captureId = payload.resource?.id;
+    if (!captureId)
+      throw new BadGatewayException('Captura PayPal sin identificador.');
+    this.assertProviderAmountMatches(session, payload);
     await this.prisma.$transaction(async (tx) => {
+      const lockedSession = await tx.paymentCheckoutSession.findUniqueOrThrow({
+        where: { id: session.id },
+        include: { invoice: true, planChangeRequest: true },
+      });
+      if (lockedSession.status === PaymentCheckoutStatus.PAID) {
+        await this.markWebhookProcessed(eventId, tx);
+        return;
+      }
+      if (lockedSession.invoice.status === SubscriptionInvoiceStatus.PAID)
+        throw new ConflictException('La factura ya fue pagada.');
+      const existingPayment = await tx.subscriptionPayment.findUnique({
+        where: { providerCaptureId: captureId },
+      });
+      if (existingPayment) {
+        await this.markWebhookProcessed(eventId, tx);
+        return;
+      }
       const subscription = await tx.companySubscription.findUniqueOrThrow({
-        where: { companyId: session.companyId },
+        where: { companyId: lockedSession.companyId },
       });
       await tx.subscriptionPayment.create({
         data: {
           companySubscriptionId: subscription.id,
-          companyId: session.companyId,
-          subscriptionInvoiceId: session.invoiceId,
-          amount: session.amount,
-          currency: session.currency,
+          companyId: lockedSession.companyId,
+          subscriptionInvoiceId: lockedSession.invoiceId,
+          amount: lockedSession.invoiceAmount,
+          currency: lockedSession.invoiceCurrency,
           method: SubscriptionPaymentMethod.PAYPAL,
           reference: orderId,
+          providerCaptureId: captureId,
           paidAt: new Date(),
         },
       });
       await tx.subscriptionInvoice.update({
-        where: { id: session.invoiceId },
+        where: { id: lockedSession.invoiceId },
         data: {
           status: SubscriptionInvoiceStatus.PAID,
-          amountPaid: session.invoice.total,
+          amountPaid: lockedSession.invoice.total,
           balance: 0,
           paidAt: new Date(),
         },
       });
       await tx.paymentCheckoutSession.update({
-        where: { id: session.id },
+        where: { id: lockedSession.id },
         data: { status: PaymentCheckoutStatus.PAID, paidAt: new Date() },
       });
-      if (session.planChangeRequest) {
+      if (lockedSession.planChangeRequest) {
+        if (
+          lockedSession.planChangeRequest.status !== 'APPROVED_PENDING_PAYMENT'
+        )
+          throw new ConflictException('La solicitud no admite aplicacion.');
         await tx.companySubscription.update({
           where: { id: subscription.id },
           data: {
-            planId: session.planChangeRequest.requestedPlanId,
+            planId: lockedSession.planChangeRequest.requestedPlanId,
             status: CompanySubscriptionStatus.ACTIVE,
             lastPaymentAt: new Date(),
           },
         });
         await tx.planChangeRequest.update({
-          where: { id: session.planChangeRequest.id },
+          where: { id: lockedSession.planChangeRequest.id },
           data: { status: 'APPROVED_APPLIED' },
         });
         await tx.subscriptionEvent.create({
           data: {
             companySubscriptionId: subscription.id,
-            companyId: session.companyId,
+            companyId: lockedSession.companyId,
             type: SubscriptionEventType.PLAN_ASSIGNED,
-            message: 'Plan aplicado después de pago PayPal confirmado.',
+            message: 'Plan aplicado despues de pago PayPal confirmado.',
             metadata: {
-              planChangeRequestId: session.planChangeRequest.id,
-              checkoutSessionId: session.id,
+              planChangeRequestId: lockedSession.planChangeRequest.id,
+              checkoutSessionId: lockedSession.id,
+              providerCaptureId: captureId,
             },
           },
         });
       }
       await tx.company.update({
-        where: { id: session.companyId },
+        where: { id: lockedSession.companyId },
         data: { status: CompanyStatus.ACTIVE },
       });
-      await tx.paymentWebhookEvent.update({
-        where: { id: event.id },
-        data: {
-          status: PaymentWebhookStatus.PROCESSED,
-          processedAt: new Date(),
-        },
-      });
+      await this.markWebhookProcessed(eventId, tx);
     });
-    return { received: true, applied: true };
+  }
+
+  private async applyNonCompletedCapture(
+    eventId: string,
+    session: CheckoutWithRelations,
+    eventType: string,
+  ) {
+    const failed = [
+      'PAYMENT.CAPTURE.DENIED',
+      'PAYMENT.CAPTURE.REFUNDED',
+      'PAYMENT.CAPTURE.REVERSED',
+      'CHECKOUT.PAYMENT-APPROVAL.REVERSED',
+    ].includes(eventType);
+    await this.prisma.$transaction(async (tx) => {
+      if (failed)
+        await tx.paymentCheckoutSession.update({
+          where: { id: session.id },
+          data: { status: PaymentCheckoutStatus.FAILED },
+        });
+      if (session.planChangeRequest && failed)
+        await tx.planChangeRequest.update({
+          where: { id: session.planChangeRequest.id },
+          data: { status: 'PAYMENT_FAILED' },
+        });
+      const subscription = await tx.companySubscription.findUnique({
+        where: { companyId: session.companyId },
+      });
+      if (subscription)
+        await tx.subscriptionEvent.create({
+          data: {
+            companySubscriptionId: subscription.id,
+            companyId: session.companyId,
+            type: SubscriptionEventType.SUBSCRIPTION_UPDATED,
+            message:
+              eventType === 'PAYMENT.CAPTURE.REFUNDED' ||
+              eventType === 'PAYMENT.CAPTURE.REVERSED'
+                ? 'Alerta administrativa: PayPal informo refund/reversal. Revisar suscripcion manualmente.'
+                : 'PayPal informo una captura no completada. Revisar checkout.',
+            metadata: {
+              eventType,
+              checkoutSessionId: session.id,
+              planChangeRequestId: session.planChangeRequest?.id,
+            },
+          },
+        });
+      await this.markWebhookProcessed(eventId, tx);
+    });
   }
 
   private baseUrl() {
-    return process.env.PAYPAL_ENV === 'live'
-      ? 'https://api-m.paypal.com'
-      : 'https://api-m.sandbox.paypal.com';
+    return 'https://api-m.sandbox.paypal.com';
   }
+
   private gatewayError(code: string, message: string, status: HttpStatus) {
     return new HttpException({ statusCode: status, code, message }, status);
   }
+
   private headers(token: string) {
     return {
       Authorization: `Bearer ${token}`,
@@ -365,6 +515,7 @@ export class PaymentGatewayService {
       'PayPal-Request-Id': randomUUID(),
     };
   }
+
   private async accessToken() {
     const auth = Buffer.from(
       `${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`,
@@ -382,6 +533,7 @@ export class PaymentGatewayService {
       throw new BadGatewayException('No se pudo autenticar con PayPal.');
     return body.access_token;
   }
+
   private async verifyWebhook(
     headers: Record<string, string | string[] | undefined>,
     payload: PayPalEvent,
@@ -407,6 +559,7 @@ export class PaymentGatewayService {
     const body = (await response.json()) as { verification_status?: string };
     return response.ok && body.verification_status === 'SUCCESS';
   }
+
   private async orderIdForCapture(captureId?: string) {
     if (!captureId) return '';
     const token = await this.accessToken();
@@ -418,5 +571,50 @@ export class PaymentGatewayService {
       supplementary_data?: { related_ids?: { order_id?: string } };
     };
     return body.supplementary_data?.related_ids?.order_id ?? '';
+  }
+
+  private findSessionByOrderId(orderId: string) {
+    return this.prisma.paymentCheckoutSession.findFirst({
+      where: { providerOrderId: orderId },
+      include: { invoice: true, planChangeRequest: true },
+    });
+  }
+
+  private assertProviderAmountMatches(
+    session: CheckoutWithRelations,
+    payload: PayPalEvent,
+  ) {
+    const amount = payload.resource?.amount;
+    if (!amount) return;
+    if (
+      !session.providerAmount ||
+      !session.providerCurrency ||
+      !amount.value ||
+      amount.currency_code !== session.providerCurrency
+    )
+      throw this.gatewayError(
+        'PAYMENT_PROVIDER_AMOUNT_MISMATCH',
+        'PayPal notifico una moneda distinta a la sesion.',
+        HttpStatus.CONFLICT,
+      );
+    if (!new Prisma.Decimal(amount.value).equals(session.providerAmount))
+      throw this.gatewayError(
+        'PAYMENT_PROVIDER_AMOUNT_MISMATCH',
+        'PayPal notifico un monto distinto a la sesion.',
+        HttpStatus.CONFLICT,
+      );
+  }
+
+  private markWebhookProcessed(
+    eventId: string,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    return tx.paymentWebhookEvent.update({
+      where: { id: eventId },
+      data: {
+        status: PaymentWebhookStatus.PROCESSED,
+        processedAt: new Date(),
+      },
+    });
   }
 }

@@ -357,6 +357,12 @@ describe('Identity and multi-company isolation (e2e)', () => {
     const superSession = await platformLogin(superAdmin.email);
     const billingSession = await platformLogin(billingAdmin.email);
     const supportSession = await platformLogin(supportAdmin.email);
+    const supportProviderTest = await http<unknown>(
+      'POST',
+      '/platform/billing/payment-providers/paypal/test-connection',
+      {},
+      supportSession.body.accessToken,
+    );
     const roles = await getRoles(company.accessToken);
     const seller = await createUser(
       company.accessToken,
@@ -504,6 +510,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
       }),
     );
     expect(supportApproval.status).toBe(403);
+    expect(supportProviderTest.status).toBe(403);
     expect(approved.status).toBe(201);
     expect(approved.body.request.status).toBe('APPROVED_PENDING_PAYMENT');
     expect(subscription.plan.name).toBe('Basico');
