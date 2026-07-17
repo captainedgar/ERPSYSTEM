@@ -31,3 +31,9 @@ El checkout se aloja en PayPal. Comercia ERP no incluye inputs de PAN/CVV, no al
 - La cuenta PayPal debe aceptar la moneda configurada en la factura. Si PayPal no admite esa moneda para la cuenta, el checkout será rechazado y se requiere una estrategia explícita de conversión antes de producción.
 - El pago manual por transferencia, depósito y reporte público sigue coexistiendo.
 - No se implementó facturación electrónica ni integración DGII real.
+
+## Disponibilidad y moneda
+
+`GET /company-billing/payment-provider-status` informa disponibilidad sin exponer credenciales. Si faltan credenciales o URLs públicas, el checkout responde `PAYMENT_PROVIDER_NOT_CONFIGURED`.
+
+Las facturas están en DOP y PayPal Checkout no admite DOP directamente como moneda de pago. Para convertir explícitamente se requieren `PAYPAL_CHECKOUT_CURRENCY=USD` y una tasa positiva `PAYPAL_DOP_USD_RATE`. Sin ambos valores, “Pagar ahora” permanece deshabilitado y el backend responde `PAYMENT_CURRENCY_NOT_SUPPORTED`; nunca se convierte silenciosamente.

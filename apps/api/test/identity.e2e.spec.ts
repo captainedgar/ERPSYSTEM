@@ -447,6 +447,22 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       cancelledCompany.accessToken,
     );
+    const activePlatformRequests = await http<
+      Array<{ id: string; status: string }>
+    >(
+      'GET',
+      '/platform/billing/plan-change-requests?view=active',
+      undefined,
+      superSession.body.accessToken,
+    );
+    const allPlatformRequests = await http<
+      Array<{ id: string; status: string }>
+    >(
+      'GET',
+      '/platform/billing/plan-change-requests?view=all',
+      undefined,
+      superSession.body.accessToken,
+    );
     const requestsAfterReview = await http<
       Array<{ id: string; status: string; requestedPlanCode: string }>
     >(
@@ -454,6 +470,12 @@ describe('Identity and multi-company isolation (e2e)', () => {
       '/company-billing/plan-change-requests',
       undefined,
       company.accessToken,
+    );
+    const cancelledApproved = await http<{ request: { status: string } }>(
+      'POST',
+      `/platform/billing/plan-change-requests/${requested.body.id}/cancel`,
+      { adminNote: 'Cancelación administrativa E2E' },
+      superSession.body.accessToken,
     );
     const instructions = await http<{
       methods: Array<{ code: string }>;
@@ -489,6 +511,21 @@ describe('Identity and multi-company isolation (e2e)', () => {
     expect(rejected.body.request.status).toBe('REJECTED');
     expect(cancelled.status).toBe(201);
     expect(cancelled.body.status).toBe('CANCELLED');
+    expect(cancelledApproved.status).toBe(201);
+    expect(cancelledApproved.body.request.status).toBe('CANCELLED');
+    expect(activePlatformRequests.body).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: thirdRequest.body.id }),
+      ]),
+    );
+    expect(allPlatformRequests.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: thirdRequest.body.id,
+          status: 'CANCELLED',
+        }),
+      ]),
+    );
     expect(requestsAfterReview.body).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

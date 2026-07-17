@@ -141,8 +141,10 @@ export class PlatformBillingController {
   }
 
   @Get('billing/plan-change-requests')
-  listPlanChangeRequests() {
-    return this.billing.listPlanChangeRequests();
+  listPlanChangeRequests(
+    @Query('view') view?: 'active' | 'reviewed' | 'cancelled' | 'all',
+  ) {
+    return this.billing.listPlanChangeRequests(view);
   }
 
   @Get('billing/payment-providers')

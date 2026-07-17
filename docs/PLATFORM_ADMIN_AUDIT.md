@@ -175,3 +175,6 @@ confirmacion del proveedor. No se almacenaran PAN ni CVV.
 # Revisión de cambios de plan
 
 Aprobar genera una factura pendiente y no modifica el plan. Rechazar no modifica la suscripción. Las acciones operativas actualizan `PlanChangeRequest` y generan auditoría separada.
+# Historial de cambios de plan
+
+La bandeja abre en “Activas” (`PENDING`, `APPROVED_PENDING_PAYMENT`, `PAYMENT_FAILED`). “Revisadas”, “Canceladas” y “Todas” conservan el historial sin borrar registros. SUPER_ADMIN puede cancelar solicitudes activas sin pago confirmado; el checkout y la factura pendientes también se cancelan.

@@ -12,9 +12,11 @@ import {
 import { canManageBilling, usePlatformUser } from '@/components/platform-shell';
 import {
   approvePlanChangeRequest,
+  cancelPlatformPlanChangeRequest,
   listPlanChangeRequests,
   rejectPlanChangeRequest,
   type PlatformPlanChangeRequest,
+  type PlanChangeRequestView,
 } from '@/lib/platform';
 
 export default function PlanChangeRequestsPage() {
@@ -28,9 +30,10 @@ export default function PlanChangeRequestsPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(false);
+  const [view, setView] = useState<PlanChangeRequestView>('active');
 
   async function refresh() {
-    const next = await listPlanChangeRequests();
+    const next = await listPlanChangeRequests(view);
     setRequests(next);
     if (selected) {
       setSelected(next.find((item) => item.id === selected.id) ?? null);
@@ -39,7 +42,7 @@ export default function PlanChangeRequestsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void listPlanChangeRequests()
+    void listPlanChangeRequests(view)
       .then((next) => {
         if (!cancelled) setRequests(next);
       })
@@ -59,7 +62,7 @@ export default function PlanChangeRequestsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [view]);
 
   const pending = useMemo(
     () => requests.filter((request) => request.status === 'PENDING').length,
@@ -88,6 +91,28 @@ export default function PlanChangeRequestsPage() {
     }
   }
 
+  async function cancelRequest() {
+    if (!selected) return;
+    setReviewing(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await cancelPlatformPlanChangeRequest(
+        selected.id,
+        note || undefined,
+      );
+      setMessage(response.message);
+      setSelected(null);
+      await refresh();
+    } catch (reason) {
+      setError(
+        platformErrorMessage('No se pudo cancelar la solicitud.', reason),
+      );
+    } finally {
+      setReviewing(false);
+    }
+  }
+
   return (
     <main className="px-5 py-8">
       <div className="mx-auto max-w-7xl">
@@ -102,6 +127,31 @@ export default function PlanChangeRequestsPage() {
             {message}
           </p>
         )}
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {(['active', 'reviewed', 'cancelled', 'all'] as const).map(
+            (option) => (
+              <Button
+                key={option}
+                onClick={() => {
+                  setView(option);
+                  setSelected(null);
+                }}
+                type="button"
+                variant={view === option ? 'primary' : 'secondary'}
+              >
+                {
+                  {
+                    active: 'Activas',
+                    reviewed: 'Revisadas',
+                    cancelled: 'Canceladas',
+                    all: 'Todas',
+                  }[option]
+                }
+              </Button>
+            ),
+          )}
+        </div>
 
         <section className={`mt-6 ${platformPanelClass}`}>
           {loading ? (
@@ -224,6 +274,21 @@ export default function PlanChangeRequestsPage() {
                 </Button>
               </div>
             )}
+            {user?.role === 'SUPER_ADMIN' &&
+              ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(
+                selected.status,
+              ) && (
+                <div className="mt-4">
+                  <Button
+                    disabled={reviewing}
+                    onClick={() => void cancelRequest()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Cancelar solicitud
+                  </Button>
+                </div>
+              )}
           </section>
         )}
       </div>

@@ -156,6 +156,25 @@ export interface PaymentInstructions {
   card: { available: false; label: string; notice: string };
 }
 
+export interface PaymentProviderStatus {
+  onlinePaymentsEnabled: boolean;
+  provider: 'PAYPAL';
+  configured: boolean;
+  environment: 'sandbox' | 'live';
+  webhookConfigured: boolean;
+  appPublicUrlConfigured: boolean;
+  apiPublicUrlConfigured: boolean;
+  checkoutCurrency: string;
+  currencySupported: boolean;
+  message: string;
+}
+
+export function getPaymentProviderStatus() {
+  return apiRequest<PaymentProviderStatus>(
+    '/company-billing/payment-provider-status',
+  );
+}
+
 export function getMySubscription() {
   return apiRequest<CompanyBillingSubscription | null>(
     '/company-billing/subscription',

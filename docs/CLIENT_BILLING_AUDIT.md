@@ -135,3 +135,6 @@ suscripcion y genera auditoria adicional.
 # Solicitudes y pago online
 
 Las solicitudes se almacenan en `PlanChangeRequest`; `AuditLog` queda solo como auditoría. Solo existe una solicitud activa por empresa. El cliente puede cancelar `PENDING` y pagar `APPROVED_PENDING_PAYMENT` mediante checkout PayPal hosted.
+# Estado del proveedor
+
+El botón PayPal se habilita únicamente cuando credenciales, URLs públicas y conversión DOP/USD están configuradas. Los fallos de configuración, moneda y checkout se muestran al usuario; los métodos manuales continúan disponibles.

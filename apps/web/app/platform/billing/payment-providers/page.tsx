@@ -34,6 +34,41 @@ export default function PaymentProvidersPage() {
               {provider.webhookConfigured ? 'configurado' : 'no configurado'} ·
               Estado: {provider.status}
             </p>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="font-medium">APP_PUBLIC_URL</dt>
+                <dd>
+                  {provider.appPublicUrlConfigured
+                    ? 'Configurada'
+                    : 'No configurada'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium">API_PUBLIC_URL</dt>
+                <dd>
+                  {provider.apiPublicUrlConfigured
+                    ? 'Configurada'
+                    : 'No configurada'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium">Moneda checkout</dt>
+                <dd>{provider.checkoutCurrency}</dd>
+              </div>
+              <div>
+                <dt className="font-medium">Política monetaria</dt>
+                <dd>
+                  {provider.currencySupported
+                    ? 'Conversión configurada'
+                    : 'No disponible'}
+                </dd>
+              </div>
+            </dl>
+            {provider.warning && (
+              <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                {provider.warning}
+              </p>
+            )}
             {!provider.configured && (
               <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
                 Pago online no configurado. Configure PAYPAL_CLIENT_ID,

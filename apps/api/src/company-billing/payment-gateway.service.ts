@@ -1,6 +1,8 @@
 import {
   BadGatewayException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -29,14 +31,64 @@ export class PaymentGatewayService {
   constructor(private readonly prisma: PrismaService) {}
 
   configuration() {
+    const checkoutCurrency = (
+      process.env.PAYPAL_CHECKOUT_CURRENCY ?? 'DOP'
+    ).toUpperCase();
+    const dopUsdRate = Number(process.env.PAYPAL_DOP_USD_RATE);
+    const currencySupported = [
+      'AUD',
+      'BRL',
+      'CAD',
+      'CNY',
+      'CZK',
+      'DKK',
+      'EUR',
+      'HKD',
+      'HUF',
+      'ILS',
+      'JPY',
+      'MYR',
+      'MXN',
+      'TWD',
+      'NZD',
+      'NOK',
+      'PHP',
+      'PLN',
+      'GBP',
+      'SGD',
+      'SEK',
+      'CHF',
+      'THB',
+      'USD',
+    ].includes(checkoutCurrency);
+    const configured = Boolean(
+      process.env.PAYPAL_CLIENT_ID &&
+      process.env.PAYPAL_CLIENT_SECRET &&
+      process.env.APP_PUBLIC_URL &&
+      process.env.API_PUBLIC_URL,
+    );
+    const conversionConfigured =
+      checkoutCurrency === 'USD' &&
+      Number.isFinite(dopUsdRate) &&
+      dopUsdRate > 0;
+    const currencyReady = currencySupported && conversionConfigured;
+    const onlinePaymentsEnabled = configured && currencyReady;
     return {
-      provider: 'PAYPAL_CHECKOUT',
+      provider: 'PAYPAL',
       environment: process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox',
-      configured: Boolean(
-        process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET,
-      ),
+      configured,
+      onlinePaymentsEnabled,
       webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
-      status: 'NOT_TESTED',
+      appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
+      apiPublicUrlConfigured: Boolean(process.env.API_PUBLIC_URL),
+      checkoutCurrency,
+      currencySupported: currencyReady,
+      conversionConfigured,
+      message: !configured
+        ? 'Pago online no configurado. Contacta a facturación o usa transferencia manual.'
+        : !currencyReady
+          ? 'La moneda actual no está disponible para PayPal. Contacta facturación.'
+          : 'Pago online disponible con PayPal.',
     };
   }
 
@@ -45,8 +97,19 @@ export class PaymentGatewayService {
     invoiceId: string,
     planChangeRequestId?: string,
   ) {
-    if (!this.configuration().configured)
-      throw new ConflictException('Pago online no configurado.');
+    const configuration = this.configuration();
+    if (!configuration.configured)
+      throw this.gatewayError(
+        'PAYMENT_PROVIDER_NOT_CONFIGURED',
+        configuration.message,
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    if (!configuration.currencySupported)
+      throw this.gatewayError(
+        'PAYMENT_CURRENCY_NOT_SUPPORTED',
+        configuration.message,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     const invoice = await this.prisma.subscriptionInvoice.findFirst({
       where: {
         id: invoiceId,
@@ -85,6 +148,9 @@ export class PaymentGatewayService {
       },
     });
     if (reusable?.checkoutUrl) return reusable;
+    const providerAmount = invoice.balance
+      .div(Number(process.env.PAYPAL_DOP_USD_RATE))
+      .toDecimalPlaces(2);
     const accessToken = await this.accessToken();
     const response = await fetch(`${this.baseUrl()}/v2/checkout/orders`, {
       method: 'POST',
@@ -96,8 +162,8 @@ export class PaymentGatewayService {
             reference_id: invoice.id,
             custom_id: `${companyId}:${invoice.id}`,
             amount: {
-              currency_code: invoice.currency,
-              value: invoice.balance.toFixed(2),
+              currency_code: configuration.checkoutCurrency,
+              value: providerAmount.toFixed(2),
             },
           },
         ],
@@ -111,11 +177,31 @@ export class PaymentGatewayService {
       id?: string;
       links?: Array<{ rel: string; href: string }>;
     };
-    if (!response.ok || !order.id)
-      throw new BadGatewayException('PayPal no pudo crear el checkout.');
+    if (!response.ok || !order.id) {
+      const raw = JSON.stringify(order);
+      const currencyRejected =
+        /currency|CURRENCY_NOT_SUPPORTED|UNSUPPORTED_PAYEE_CURRENCY/i.test(raw);
+      throw this.gatewayError(
+        currencyRejected
+          ? 'PAYMENT_CURRENCY_NOT_SUPPORTED'
+          : 'PAYMENT_CHECKOUT_FAILED',
+        currencyRejected
+          ? 'La moneda actual no está disponible para PayPal. Contacta facturación.'
+          : 'No se pudo iniciar el checkout. Intenta nuevamente o contacta soporte.',
+        currencyRejected
+          ? HttpStatus.UNPROCESSABLE_ENTITY
+          : HttpStatus.BAD_GATEWAY,
+      );
+    }
     const checkoutUrl = order.links?.find(
       (link) => link.rel === 'approve',
     )?.href;
+    if (!checkoutUrl)
+      throw this.gatewayError(
+        'PAYMENT_CHECKOUT_URL_MISSING',
+        'No se pudo iniciar el checkout. Intenta nuevamente o contacta soporte.',
+        HttpStatus.BAD_GATEWAY,
+      );
     const session = await this.prisma.paymentCheckoutSession.create({
       data: {
         companyId,
@@ -268,6 +354,9 @@ export class PaymentGatewayService {
     return process.env.PAYPAL_ENV === 'live'
       ? 'https://api-m.paypal.com'
       : 'https://api-m.sandbox.paypal.com';
+  }
+  private gatewayError(code: string, message: string, status: HttpStatus) {
+    return new HttpException({ statusCode: status, code, message }, status);
   }
   private headers(token: string) {
     return {

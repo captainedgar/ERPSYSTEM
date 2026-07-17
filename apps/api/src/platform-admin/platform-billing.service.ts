@@ -107,22 +107,49 @@ export class PlatformBillingService {
   }
 
   paymentProviders() {
+    const checkoutCurrency = (
+      process.env.PAYPAL_CHECKOUT_CURRENCY ?? 'DOP'
+    ).toUpperCase();
+    const rate = Number(process.env.PAYPAL_DOP_USD_RATE);
+    const currencySupported =
+      checkoutCurrency === 'USD' && Number.isFinite(rate) && rate > 0;
     return [
       {
         provider: 'PAYPAL_CHECKOUT',
         environment: process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox',
         configured: Boolean(
-          process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET,
+          process.env.PAYPAL_CLIENT_ID &&
+          process.env.PAYPAL_CLIENT_SECRET &&
+          process.env.APP_PUBLIC_URL &&
+          process.env.API_PUBLIC_URL,
         ),
         webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
+        appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
+        apiPublicUrlConfigured: Boolean(process.env.API_PUBLIC_URL),
+        checkoutCurrency,
+        currencySupported,
+        warning: currencySupported
+          ? null
+          : 'DOP no está soportado directamente por PayPal Checkout. Configure conversión USD con PAYPAL_DOP_USD_RATE.',
         status: 'NOT_TESTED',
         lastTestAt: null,
       },
     ];
   }
 
-  async listPlanChangeRequests() {
+  async listPlanChangeRequests(
+    view: 'active' | 'reviewed' | 'cancelled' | 'all' = 'active',
+  ) {
+    const statuses =
+      view === 'active'
+        ? (['PENDING', 'APPROVED_PENDING_PAYMENT', 'PAYMENT_FAILED'] as const)
+        : view === 'reviewed'
+          ? (['APPROVED_APPLIED', 'REJECTED', 'EXPIRED'] as const)
+          : view === 'cancelled'
+            ? (['CANCELLED'] as const)
+            : undefined;
     const requests = await this.prisma.planChangeRequest.findMany({
+      where: statuses ? { status: { in: [...statuses] } } : undefined,
       include: {
         company: { select: { id: true, name: true, status: true } },
         currentPlan: true,
@@ -296,20 +323,42 @@ export class PlatformBillingService {
         'Solo SUPER_ADMIN puede cancelar administrativamente.',
       );
     const request = await this.findPlanChangeRequest(id);
-    if (request.status !== 'PENDING')
+    if (!['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(request.status))
       throw new ConflictException(
-        'Solo se pueden cancelar solicitudes pendientes.',
+        'Solo se pueden cancelar solicitudes activas sin pago confirmado.',
+      );
+    if (
+      request.checkoutSession?.status === 'PAID' ||
+      request.invoice?.status === 'PAID'
+    )
+      throw new ConflictException(
+        'La solicitud tiene un pago confirmado y no puede cancelarse.',
       );
     const cancelledAt = new Date();
-    await this.prisma.planChangeRequest.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt,
-        reviewedAt: cancelledAt,
-        reviewedByPlatformUserId: user.platformUserId,
-        adminNote: dto.adminNote?.trim() ?? null,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      if (request.checkoutSession)
+        await tx.paymentCheckoutSession.update({
+          where: { id: request.checkoutSession.id },
+          data: { status: 'CANCELLED', cancelledAt },
+        });
+      if (
+        request.invoice &&
+        !['PAID', 'VOIDED', 'CANCELLED'].includes(request.invoice.status)
+      )
+        await tx.subscriptionInvoice.update({
+          where: { id: request.invoice.id },
+          data: { status: 'CANCELLED' },
+        });
+      await tx.planChangeRequest.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt,
+          reviewedAt: cancelledAt,
+          reviewedByPlatformUserId: user.platformUserId,
+          adminNote: dto.adminNote?.trim() ?? null,
+        },
+      });
     });
     await this.audit.create({
       user,

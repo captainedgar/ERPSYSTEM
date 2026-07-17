@@ -451,9 +451,11 @@ export function listBillingPayments() {
   return platformRequest<SubscriptionPayment[]>('/platform/billing/payments');
 }
 
-export function listPlanChangeRequests() {
+export type PlanChangeRequestView = 'active' | 'reviewed' | 'cancelled' | 'all';
+
+export function listPlanChangeRequests(view: PlanChangeRequestView = 'active') {
   return platformRequest<PlatformPlanChangeRequest[]>(
-    '/platform/billing/plan-change-requests',
+    `/platform/billing/plan-change-requests?view=${view}`,
   );
 }
 
@@ -464,6 +466,11 @@ export function listPaymentProviders() {
       environment: string;
       configured: boolean;
       webhookConfigured: boolean;
+      appPublicUrlConfigured: boolean;
+      apiPublicUrlConfigured: boolean;
+      checkoutCurrency: string;
+      currencySupported: boolean;
+      warning?: string | null;
       status: string;
       lastTestAt?: string | null;
     }>
@@ -491,6 +498,19 @@ export function rejectPlanChangeRequest(id: string, adminNote?: string) {
     request: PlatformPlanChangeRequest;
     message: string;
   }>(`/platform/billing/plan-change-requests/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ adminNote }),
+  });
+}
+
+export function cancelPlatformPlanChangeRequest(
+  id: string,
+  adminNote?: string,
+) {
+  return platformRequest<{
+    request: PlatformPlanChangeRequest;
+    message: string;
+  }>(`/platform/billing/plan-change-requests/${id}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ adminNote }),
   });

@@ -10,6 +10,7 @@ import {
   createPlanChangeCheckout,
   getMyBillingEvents,
   getCompanyPaymentInstructions,
+  getPaymentProviderStatus,
   getMyEntitlements,
   getMyInvoicePaymentLink,
   getMyInvoices,
@@ -26,6 +27,7 @@ import {
   type CompanyPlanOption,
   type CompanyPlanChangeRequest,
   type PaymentInstructions,
+  type PaymentProviderStatus,
 } from '@/lib/company-billing';
 import { hasPermission } from '@/lib/permissions';
 
@@ -49,6 +51,8 @@ export function CompanyBillingManager({
   );
   const [paymentInstructions, setPaymentInstructions] =
     useState<PaymentInstructions | null>(null);
+  const [paymentProvider, setPaymentProvider] =
+    useState<PaymentProviderStatus | null>(null);
   const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
   const [cancellingRequest, setCancellingRequest] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
@@ -68,6 +72,7 @@ export function CompanyBillingManager({
       getAvailableCompanyPlans(),
       getMyPlanChangeRequests(),
       getCompanyPaymentInstructions(),
+      getPaymentProviderStatus(),
     ])
       .then(
         ([
@@ -79,6 +84,7 @@ export function CompanyBillingManager({
           nextPlans,
           nextPlanRequests,
           nextPaymentInstructions,
+          nextPaymentProvider,
         ]) => {
           if (cancelled) return;
           setSubscription(nextSubscription);
@@ -89,6 +95,7 @@ export function CompanyBillingManager({
           setPlans(nextPlans);
           setPlanRequests(nextPlanRequests);
           setPaymentInstructions(nextPaymentInstructions);
+          setPaymentProvider(nextPaymentProvider);
           setLoadedAt(Date.now());
         },
       )
@@ -189,7 +196,9 @@ export function CompanyBillingManager({
     try {
       const checkout = await createPlanChangeCheckout(latestPlanRequest.id);
       if (!checkout.checkoutUrl)
-        throw new Error('PayPal no devolvió un enlace de pago.');
+        throw new Error(
+          'No se pudo iniciar el checkout. Intenta nuevamente o contacta soporte.',
+        );
       window.location.assign(checkout.checkoutUrl);
     } catch (reason) {
       setError(
@@ -467,14 +476,23 @@ export function CompanyBillingManager({
                   latestPlanRequest.invoice && (
                     <div className="mt-3">
                       <Button
-                        disabled={startingCheckout}
+                        disabled={
+                          startingCheckout ||
+                          !paymentProvider?.onlinePaymentsEnabled
+                        }
                         onClick={() => void payPlanChange()}
                         type="button"
                       >
                         {startingCheckout
                           ? 'Abriendo PayPal...'
-                          : 'Pagar ahora'}
+                          : 'Pagar ahora con PayPal'}
                       </Button>
+                      {!paymentProvider?.onlinePaymentsEnabled && (
+                        <p className="mt-2 font-medium">
+                          {paymentProvider?.message ??
+                            'Pago online no configurado todavía.'}
+                        </p>
+                      )}
                       <p className="mt-2 text-xs">
                         Pago seguro alojado por PayPal. Comercia ERP no almacena
                         tarjeta ni CVV.

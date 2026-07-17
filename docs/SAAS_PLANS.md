@@ -120,3 +120,6 @@ cumplimiento PCI delegado al proveedor. PAN y CVV quedan fuera de Comercia ERP.
 # Aplicación de cambios
 
 Un cambio aprobado se aplica después de un pago online confirmado o de una futura acción manual explícita de SUPER_ADMIN. La aprobación ordinaria nunca cambia `CompanySubscription.planId` directamente.
+# Cancelación e historial
+
+Cancelar una solicitud pendiente de pago no cambia el plan. Las solicitudes terminales permanecen visibles mediante los filtros de historial de Platform Admin.

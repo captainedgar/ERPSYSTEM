@@ -32,6 +32,12 @@ export class CompanyBillingController {
     return this.gateway.getSession(user.companyId, id);
   }
 
+  @Get('payment-provider-status')
+  @RequirePermissions('billing.view')
+  paymentProviderStatus() {
+    return this.gateway.configuration();
+  }
+
   @Get('subscription')
   @RequirePermissions('billing.view')
   subscription(@CurrentUser() user: AuthUser) {
