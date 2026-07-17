@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   Currency,
+  PlanChangeRequestStatus,
   SubscriptionInvoiceStatus,
   SubscriptionPaymentLinkStatus,
 } from '@prisma/client';
@@ -202,19 +203,33 @@ export class CompanyBillingService {
   }
 
   async listPlanChangeRequests(companyId: string) {
-    const logs = await this.prisma.auditLog.findMany({
-      where: {
-        companyId,
-        action: 'SAAS_PLAN_CHANGE_REQUESTED',
-        module: 'company_billing',
-      },
+    const requests = await this.prisma.planChangeRequest.findMany({
+      where: { companyId },
       include: {
-        user: { select: { id: true, name: true, email: true } },
+        currentPlan: { select: { id: true, name: true } },
+        requestedPlan: { select: { id: true, name: true } },
+        requestedByUser: { select: { id: true, name: true, email: true } },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            balance: true,
+          },
+        },
+        checkoutSession: {
+          select: { id: true, status: true, checkoutUrl: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
-    return logs.map((log) => this.planChangeResponse(log));
+    return requests.map((request) => ({
+      ...request,
+      currentPlanName: request.currentPlan.name,
+      requestedPlanName: request.requestedPlan.name,
+      requestedBy: request.requestedByUser,
+    }));
   }
 
   getEntitlements(companyId: string) {
@@ -266,12 +281,16 @@ export class CompanyBillingService {
       return { success: true, alreadyCurrent: true, requestedPlan: planCode };
     }
     const requested = STANDARD_SAAS_PLANS[planCode];
-    const pending = await this.prisma.auditLog.findFirst({
+    const pending = await this.prisma.planChangeRequest.findFirst({
       where: {
         companyId: user.companyId,
-        action: 'SAAS_PLAN_CHANGE_REQUESTED',
-        module: 'company_billing',
-        metadataJson: { path: ['status'], equals: 'PENDING' },
+        status: {
+          in: [
+            PlanChangeRequestStatus.PENDING,
+            PlanChangeRequestStatus.APPROVED_PENDING_PAYMENT,
+            PlanChangeRequestStatus.PAYMENT_FAILED,
+          ],
+        },
       },
       select: { id: true },
     });
@@ -299,24 +318,30 @@ export class CompanyBillingService {
     if (!storedPlan.isActive) {
       throw new NotFoundException('El plan solicitado no esta disponible.');
     }
-    const log = await this.audit.create({
-      companyId: user.companyId,
-      branchId: user.branchId,
-      userId: user.userId,
-      action: 'SAAS_PLAN_CHANGE_REQUESTED',
-      module: 'company_billing',
-      entityType: 'SaasPlan',
-      description: `Cambio solicitado de ${current.plan.name} a ${requested.name}`,
-      metadata: {
-        status: 'PENDING',
-        requestedAt: new Date().toISOString(),
-        currentPlanCode: current.plan.code,
-        currentPlanId: current.plan.id,
-        currentPlanName: current.plan.name,
-        requestedPlanCode: requested.code,
-        requestedPlanId: storedPlan.id,
-        requestedPlanName: requested.name,
-      },
+    const log = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.planChangeRequest.create({
+        data: {
+          companyId: user.companyId,
+          currentPlanId: current.plan.id,
+          requestedPlanId: storedPlan.id,
+          requestedByUserId: user.userId,
+        },
+      });
+      await this.audit.createWithClient(tx, {
+        companyId: user.companyId,
+        branchId: user.branchId,
+        userId: user.userId,
+        action: 'SAAS_PLAN_CHANGE_REQUESTED',
+        module: 'company_billing',
+        entityType: 'PlanChangeRequest',
+        entityId: created.id,
+        description: `Cambio solicitado de ${current.plan.name} a ${requested.name}`,
+        metadata: {
+          requestedPlanId: storedPlan.id,
+          requestedPlanCode: requested.code,
+        },
+      });
+      return created;
     });
     return {
       success: true,
@@ -327,6 +352,44 @@ export class CompanyBillingService {
       message:
         'Solicitud enviada. El equipo de Comercia ERP revisara el cambio de plan.',
       createdAt: log.createdAt,
+    };
+  }
+
+  async cancelPlanChangeRequest(user: AuthUser, id: string) {
+    const request = await this.prisma.planChangeRequest.findFirst({
+      where: { id, companyId: user.companyId },
+    });
+    if (!request) {
+      throw new NotFoundException('Solicitud de cambio de plan no encontrada.');
+    }
+    if (request.status !== PlanChangeRequestStatus.PENDING) {
+      throw new ConflictException(
+        'Solo se pueden cancelar solicitudes pendientes.',
+      );
+    }
+    const cancelledAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.planChangeRequest.update({
+        where: { id },
+        data: { status: PlanChangeRequestStatus.CANCELLED, cancelledAt },
+      });
+      await this.audit.createWithClient(tx, {
+        companyId: user.companyId,
+        branchId: user.branchId,
+        userId: user.userId,
+        action: 'SAAS_PLAN_CHANGE_CANCELLED',
+        module: 'company_billing',
+        entityType: 'PlanChangeRequest',
+        entityId: id,
+        description: 'Solicitud de cambio de plan cancelada por el cliente',
+        metadata: { planChangeRequestId: id },
+      });
+    });
+    return {
+      id,
+      status: 'CANCELLED',
+      message: 'Solicitud de cambio de plan cancelada.',
+      cancelledAt,
     };
   }
 
@@ -364,35 +427,5 @@ export class CompanyBillingService {
       );
     }
     return link;
-  }
-
-  private planChangeResponse(log: {
-    id: string;
-    description: string;
-    metadataJson: unknown;
-    createdAt: Date;
-    user?: { id: string; name: string; email: string } | null;
-  }) {
-    const metadata =
-      log.metadataJson &&
-      typeof log.metadataJson === 'object' &&
-      !Array.isArray(log.metadataJson)
-        ? (log.metadataJson as Record<string, unknown>)
-        : {};
-    return {
-      id: log.id,
-      status: typeof metadata.status === 'string' ? metadata.status : 'PENDING',
-      currentPlanCode: metadata.currentPlanCode,
-      currentPlanName: metadata.currentPlanName,
-      requestedPlanCode: metadata.requestedPlanCode,
-      requestedPlanName: metadata.requestedPlanName,
-      adminNote:
-        typeof metadata.adminNote === 'string' ? metadata.adminNote : null,
-      reviewedAt:
-        typeof metadata.reviewedAt === 'string' ? metadata.reviewedAt : null,
-      requestedBy: log.user ?? null,
-      createdAt: log.createdAt,
-      description: log.description,
-    };
   }
 }

@@ -165,3 +165,13 @@ auditoria.
 `GET /platform/billing/payment-reports` alimenta la seccion de reportes dentro
 de Pagos SaaS. Un reporte publico nunca se considera pago aprobado
 automaticamente.
+
+## Pago con tarjeta - pendiente
+
+Platform Admin no dispone de acciones para capturar tarjetas. Una integracion
+futura debe usar checkout tokenizado, guardar solo IDs del proveedor, validar
+webhooks, aplicar idempotencia y registrar pagos exclusivamente despues de la
+confirmacion del proveedor. No se almacenaran PAN ni CVV.
+# Revisión de cambios de plan
+
+Aprobar genera una factura pendiente y no modifica el plan. Rechazar no modifica la suscripción. Las acciones operativas actualizan `PlanChangeRequest` y generan auditoría separada.

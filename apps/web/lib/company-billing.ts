@@ -104,7 +104,14 @@ export interface CompanyEntitlements {
 
 export interface CompanyPlanChangeRequest {
   id: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  status:
+    | 'PENDING'
+    | 'APPROVED_PENDING_PAYMENT'
+    | 'APPROVED_APPLIED'
+    | 'REJECTED'
+    | 'CANCELLED'
+    | 'EXPIRED'
+    | 'PAYMENT_FAILED';
   currentPlanCode?: CompanyPlanOption['code'];
   currentPlanName?: string;
   requestedPlanCode?: CompanyPlanOption['code'];
@@ -112,6 +119,26 @@ export interface CompanyPlanChangeRequest {
   adminNote?: string | null;
   reviewedAt?: string | null;
   createdAt: string;
+  currentPlan?: { id: string; name: string };
+  requestedPlan?: { id: string; name: string };
+  invoice?: {
+    id: string;
+    invoiceNumber: string;
+    status: string;
+    balance: string | number;
+  } | null;
+  checkoutSession?: {
+    id: string;
+    status: string;
+    checkoutUrl?: string | null;
+  } | null;
+}
+
+export function createPlanChangeCheckout(id: string) {
+  return apiRequest<{ id: string; checkoutUrl?: string | null }>(
+    `/company-billing/plan-change-requests/${id}/checkout`,
+    { method: 'POST' },
+  );
 }
 
 export interface PaymentInstructions {
@@ -184,4 +211,15 @@ export function getCompanyPaymentInstructions() {
   return apiRequest<PaymentInstructions>(
     '/company-billing/payment-instructions',
   );
+}
+
+export function cancelCompanyPlanChangeRequest(id: string) {
+  return apiRequest<{
+    id: string;
+    status: 'CANCELLED';
+    message: string;
+    cancelledAt: string;
+  }>(`/company-billing/plan-change-requests/${id}/cancel`, {
+    method: 'POST',
+  });
 }

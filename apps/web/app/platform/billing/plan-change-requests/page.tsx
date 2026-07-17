@@ -93,8 +93,8 @@ export default function PlanChangeRequestsPage() {
       <div className="mx-auto max-w-7xl">
         <PlatformHeader title="Solicitudes de cambio de plan" />
         <p className="mt-2 text-sm text-slate-600">
-          {pending} solicitud(es) pendientes. Aprobar cambia el plan, pero no
-          procesa cobros ni crea pagos.
+          {pending} solicitud(es) pendientes. Aprobar crea una factura; el plan
+          se aplica solamente después de confirmar el pago.
         </p>
         {error && <p className={platformErrorClass}>{error}</p>}
         {message && (
@@ -117,6 +117,7 @@ export default function PlanChangeRequestsPage() {
                     <th className="py-3">Solicitado por</th>
                     <th className="py-3">Fecha</th>
                     <th className="py-3">Estado</th>
+                    <th className="py-3">Factura / checkout</th>
                     <th className="py-3" />
                   </tr>
                 </thead>
@@ -137,6 +138,12 @@ export default function PlanChangeRequestsPage() {
                       </td>
                       <td className="py-3">{formatDate(request.createdAt)}</td>
                       <td className="py-3">{request.status}</td>
+                      <td className="py-3">
+                        {request.invoice?.invoiceNumber ?? 'Sin factura'}
+                        {request.checkoutSession
+                          ? ` · ${request.checkoutSession.status}`
+                          : ''}
+                      </td>
                       <td className="py-3 text-right">
                         <Button
                           onClick={() => {
@@ -172,6 +179,22 @@ export default function PlanChangeRequestsPage() {
               {formatDate(selected.createdAt)} por{' '}
               {selected.requestedBy?.email ?? 'usuario no disponible'}.
             </p>
+            {selected.invoice && (
+              <p className="mt-2 text-sm text-slate-600">
+                Factura: {selected.invoice.invoiceNumber} ·{' '}
+                {selected.invoice.status}
+              </p>
+            )}
+            {selected.checkoutSession?.checkoutUrl && (
+              <a
+                className="mt-2 inline-flex text-sm font-semibold text-blue-700"
+                href={selected.checkoutSession.checkoutUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Ver checkout PayPal
+              </a>
+            )}
             <label className="mt-4 grid gap-1 text-sm font-medium text-slate-700">
               <span>Nota administrativa</span>
               <textarea

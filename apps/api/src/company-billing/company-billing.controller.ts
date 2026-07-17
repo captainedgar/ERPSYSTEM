@@ -5,10 +5,32 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { CompanyBillingService } from './company-billing.service';
 import { RequestPlanChangeDto } from './company-billing.dto';
+import { PaymentGatewayService } from './payment-gateway.service';
 
 @Controller('company-billing')
 export class CompanyBillingController {
-  constructor(private readonly billing: CompanyBillingService) {}
+  constructor(
+    private readonly billing: CompanyBillingService,
+    private readonly gateway: PaymentGatewayService,
+  ) {}
+
+  @Post('invoices/:id/checkout')
+  @RequirePermissions('billing.pay')
+  checkoutInvoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gateway.createForInvoice(user.companyId, id);
+  }
+
+  @Post('plan-change-requests/:id/checkout')
+  @RequirePermissions('billing.pay')
+  checkoutPlanChange(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gateway.createForPlanChange(user.companyId, id);
+  }
+
+  @Get('checkout-sessions/:id')
+  @RequirePermissions('billing.pay')
+  checkoutSession(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gateway.getSession(user.companyId, id);
+  }
 
   @Get('subscription')
   @RequirePermissions('billing.view')
@@ -68,6 +90,15 @@ export class CompanyBillingController {
   @RequirePermissions('billing.view')
   paymentInstructions() {
     return this.billing.getPaymentInstructions();
+  }
+
+  @Post('plan-change-requests/:id/cancel')
+  @RequirePermissions('billing.pay')
+  cancelPlanChangeRequest(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.billing.cancelPlanChangeRequest(user, id);
   }
 
   @Post('plan-change-request')

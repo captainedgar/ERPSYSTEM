@@ -25,7 +25,8 @@
     "db:seed-saas-plans": "npm run db:seed-saas-plans --workspace=packages/database",
     "db:seed-demo": "npm run db:seed-demo --workspace=packages/database",
     "rbac:sync-company-roles": "dotenv -e .env -- node packages/database/scripts/sync-company-role-permissions.mjs",
-    "billing:process-overdue": "npm run billing:process-overdue --workspace=packages/database"
+    "billing:process-overdue": "npm run billing:process-overdue --workspace=packages/database",
+    "billing:migrate-plan-requests": "dotenv -e .env -- node packages/database/scripts/migrate-plan-change-requests.mjs"
   },
   "engines": {
     "node": ">=20.9.0",

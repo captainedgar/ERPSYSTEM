@@ -230,6 +230,37 @@ enum SubscriptionPaymentMethod {
   CARD_MANUAL
   CHECK
   OTHER
+  PAYPAL
+}
+
+enum PlanChangeRequestStatus {
+  PENDING
+  APPROVED_PENDING_PAYMENT
+  APPROVED_APPLIED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  PAYMENT_FAILED
+}
+
+enum PaymentProvider {
+  PAYPAL_CHECKOUT
+}
+
+enum PaymentCheckoutStatus {
+  PENDING
+  APPROVED
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentWebhookStatus {
+  RECEIVED
+  PROCESSED
+  REJECTED
+  FAILED
 }
 
 enum SubscriptionEventType {
@@ -343,6 +374,8 @@ model Company {
   subscriptionInvoices       SubscriptionInvoice[]
   subscriptionPaymentLinks   SubscriptionPaymentLink[]
   subscriptionPaymentReports SubscriptionPaymentReport[]
+  planChangeRequests         PlanChangeRequest[]
+  paymentCheckoutSessions    PaymentCheckoutSession[]
   productCompatibilityGroups ProductCompatibilityGroup[]
   productCompatibilityItems  ProductCompatibilityGroupItem[]
   productAlternativeCodes    ProductAlternativeCode[]
@@ -417,6 +450,7 @@ model User {
   cashMovementsCreated      CashMovement[]         @relation("CashMovementCreatedBy")
   inventoryMovementsCreated InventoryMovement[]    @relation("InventoryMovementCreatedBy")
   inventoryTransfersCreated InventoryTransfer[]    @relation("InventoryTransferCreatedBy")
+  planChangeRequests        PlanChangeRequest[]
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
   deletedAt                 DateTime?
@@ -1228,21 +1262,22 @@ model InventoryMovement {
 }
 
 model PlatformUser {
-  id                   String                    @id @default(cuid())
-  name                 String
-  email                String                    @unique
-  passwordHash         String
-  role                 PlatformRole              @default(SUPPORT_ADMIN)
-  status               PlatformUserStatus        @default(ACTIVE)
-  lastLoginAt          DateTime?
-  sessions             PlatformSession[]
-  auditLogs            PlatformAuditLog[]
-  subscriptionPayments SubscriptionPayment[]
-  subscriptionEvents   SubscriptionEvent[]
-  subscriptionInvoices SubscriptionInvoice[]
-  paymentLinksCreated  SubscriptionPaymentLink[] @relation("SubscriptionPaymentLinkCreatedBy")
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
+  id                         String                    @id @default(cuid())
+  name                       String
+  email                      String                    @unique
+  passwordHash               String
+  role                       PlatformRole              @default(SUPPORT_ADMIN)
+  status                     PlatformUserStatus        @default(ACTIVE)
+  lastLoginAt                DateTime?
+  sessions                   PlatformSession[]
+  auditLogs                  PlatformAuditLog[]
+  subscriptionPayments       SubscriptionPayment[]
+  subscriptionEvents         SubscriptionEvent[]
+  subscriptionInvoices       SubscriptionInvoice[]
+  paymentLinksCreated        SubscriptionPaymentLink[] @relation("SubscriptionPaymentLinkCreatedBy")
+  planChangeRequestsReviewed PlanChangeRequest[]
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
 
   @@index([status, role])
   @@map("platform_users")
@@ -1297,6 +1332,8 @@ model SaasPlan {
   isActive        Boolean               @default(true)
   subscriptions   CompanySubscription[]
   invoices        SubscriptionInvoice[]
+  planChangesFrom PlanChangeRequest[]   @relation("PlanChangeCurrentPlan")
+  planChangesTo   PlanChangeRequest[]   @relation("PlanChangeRequestedPlan")
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1342,11 +1379,11 @@ model SubscriptionPayment {
   reference               String?
   notes                   String?
   paidAt                  DateTime
-  createdByPlatformUserId String
+  createdByPlatformUserId String?
   subscription            CompanySubscription       @relation(fields: [companySubscriptionId], references: [id], onDelete: Cascade)
   company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   invoice                 SubscriptionInvoice?      @relation(fields: [subscriptionInvoiceId], references: [id], onDelete: SetNull)
-  createdByPlatformUser   PlatformUser              @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
+  createdByPlatformUser   PlatformUser?             @relation(fields: [createdByPlatformUserId], references: [id], onDelete: SetNull)
   createdAt               DateTime                  @default(now())
 
   @@index([companyId, paidAt(sort: Desc)])
@@ -1385,6 +1422,8 @@ model SubscriptionInvoice {
   payments                SubscriptionPayment[]
   paymentLinks            SubscriptionPaymentLink[]
   paymentReports          SubscriptionPaymentReport[]
+  planChangeRequests      PlanChangeRequest[]
+  checkoutSessions        PaymentCheckoutSession[]
   createdByPlatformUser   PlatformUser                @relation(fields: [createdByPlatformUserId], references: [id], onDelete: Restrict)
   createdAt               DateTime                    @default(now())
   updatedAt               DateTime                    @updatedAt
@@ -1470,4 +1509,78 @@ model SubscriptionEvent {
   @@index([companyId, createdAt(sort: Desc)])
   @@index([companySubscriptionId, createdAt(sort: Desc)])
   @@map("subscription_events")
+}
+
+model PlanChangeRequest {
+  id                       String                   @id @default(cuid())
+  companyId                String
+  currentPlanId            String
+  requestedPlanId          String
+  requestedByUserId        String
+  status                   PlanChangeRequestStatus  @default(PENDING)
+  reason                   String?
+  adminNote                String?
+  reviewedByPlatformUserId String?
+  reviewedAt               DateTime?
+  approvedAt               DateTime?
+  rejectedAt               DateTime?
+  cancelledAt              DateTime?
+  checkoutSessionId        String?                  @unique
+  invoiceId                String?
+  company                  Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  currentPlan              SaasPlan                 @relation("PlanChangeCurrentPlan", fields: [currentPlanId], references: [id], onDelete: Restrict)
+  requestedPlan            SaasPlan                 @relation("PlanChangeRequestedPlan", fields: [requestedPlanId], references: [id], onDelete: Restrict)
+  requestedByUser          User                     @relation(fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  reviewedByPlatformUser   PlatformUser?            @relation(fields: [reviewedByPlatformUserId], references: [id], onDelete: SetNull)
+  invoice                  SubscriptionInvoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  checkoutSession          PaymentCheckoutSession?  @relation("PlanChangePrimaryCheckout", fields: [checkoutSessionId], references: [id], onDelete: SetNull)
+  checkoutSessions         PaymentCheckoutSession[] @relation("PlanChangeCheckouts")
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([requestedByUserId, createdAt(sort: Desc)])
+  @@map("plan_change_requests")
+}
+
+model PaymentCheckoutSession {
+  id                  String                @id @default(cuid())
+  companyId           String
+  invoiceId           String
+  planChangeRequestId String?
+  provider            PaymentProvider
+  providerSessionId   String?               @unique
+  providerOrderId     String?               @unique
+  status              PaymentCheckoutStatus @default(PENDING)
+  amount              Decimal               @db.Decimal(12, 2)
+  currency            Currency              @default(DOP)
+  checkoutUrl         String?
+  expiresAt           DateTime?
+  paidAt              DateTime?
+  cancelledAt         DateTime?
+  company             Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  invoice             SubscriptionInvoice   @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  planChangeRequest   PlanChangeRequest?    @relation("PlanChangeCheckouts", fields: [planChangeRequestId], references: [id], onDelete: SetNull)
+  primaryForRequest   PlanChangeRequest?    @relation("PlanChangePrimaryCheckout")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([invoiceId, status])
+  @@map("payment_checkout_sessions")
+}
+
+model PaymentWebhookEvent {
+  id          String               @id @default(cuid())
+  provider    PaymentProvider
+  eventId     String
+  eventType   String
+  payload     Json
+  processedAt DateTime?
+  status      PaymentWebhookStatus @default(RECEIVED)
+  createdAt   DateTime             @default(now())
+
+  @@unique([provider, eventId])
+  @@index([status, createdAt])
+  @@map("payment_webhook_events")
 }

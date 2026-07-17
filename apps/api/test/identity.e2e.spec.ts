@@ -342,11 +342,21 @@ describe('Identity and multi-company isolation (e2e)', () => {
 
   it('operates plan change requests and exposes manual payment instructions', async () => {
     const company = await registerCompany('plan-review', 'BASIC');
-    const admin = await createPlatformUser(
-      `plan-review-${registrationCounter}@platform.test`,
+    const superAdmin = await createPlatformUser(
+      `plan-review-super-${registrationCounter}@platform.test`,
+      PlatformRole.SUPER_ADMIN,
+    );
+    const billingAdmin = await createPlatformUser(
+      `plan-review-billing-${registrationCounter}@platform.test`,
       PlatformRole.BILLING_ADMIN,
     );
-    const platformSession = await platformLogin(admin.email);
+    const supportAdmin = await createPlatformUser(
+      `plan-review-support-${registrationCounter}@platform.test`,
+      PlatformRole.SUPPORT_ADMIN,
+    );
+    const superSession = await platformLogin(superAdmin.email);
+    const billingSession = await platformLogin(billingAdmin.email);
+    const supportSession = await platformLogin(supportAdmin.email);
     const roles = await getRoles(company.accessToken);
     const seller = await createUser(
       company.accessToken,
@@ -369,7 +379,7 @@ describe('Identity and multi-company isolation (e2e)', () => {
     }>(
       'POST',
       '/company-billing/plan-change-request',
-      { planCode: 'PRO' },
+      { planCode: 'ENTERPRISE' },
       company.accessToken,
     );
     const duplicate = await http<unknown>(
@@ -390,7 +400,13 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'GET',
       '/platform/billing/plan-change-requests',
       undefined,
-      platformSession.body.accessToken,
+      superSession.body.accessToken,
+    );
+    const supportApproval = await http<unknown>(
+      'POST',
+      `/platform/billing/plan-change-requests/${requested.body.id}/approve`,
+      {},
+      supportSession.body.accessToken,
     );
     const approved = await http<{
       request: { status: string };
@@ -399,23 +415,45 @@ describe('Identity and multi-company isolation (e2e)', () => {
       'POST',
       `/platform/billing/plan-change-requests/${requested.body.id}/approve`,
       { adminNote: 'Aprobado para prueba E2E' },
-      platformSession.body.accessToken,
+      superSession.body.accessToken,
     );
     const subscription = await prisma.companySubscription.findUniqueOrThrow({
       where: { companyId: company.company.id },
       include: { plan: true },
     });
+    const rejectedCompany = await registerCompany('plan-reject', 'BASIC');
     const secondRequest = await http<{ id: string }>(
       'POST',
       '/company-billing/plan-change-request',
       { planCode: 'PREMIUM' },
-      company.accessToken,
+      rejectedCompany.accessToken,
     );
     const rejected = await http<{ request: { status: string } }>(
       'POST',
       `/platform/billing/plan-change-requests/${secondRequest.body.id}/reject`,
       { adminNote: 'Requiere revision comercial' },
-      platformSession.body.accessToken,
+      billingSession.body.accessToken,
+    );
+    const cancelledCompany = await registerCompany('plan-cancel', 'BASIC');
+    const thirdRequest = await http<{ id: string }>(
+      'POST',
+      '/company-billing/plan-change-request',
+      { planCode: 'PRO' },
+      cancelledCompany.accessToken,
+    );
+    const cancelled = await http<{ status: string }>(
+      'POST',
+      `/company-billing/plan-change-requests/${thirdRequest.body.id}/cancel`,
+      undefined,
+      cancelledCompany.accessToken,
+    );
+    const requestsAfterReview = await http<
+      Array<{ id: string; status: string; requestedPlanCode: string }>
+    >(
+      'GET',
+      '/company-billing/plan-change-requests',
+      undefined,
+      company.accessToken,
     );
     const instructions = await http<{
       methods: Array<{ code: string }>;
@@ -443,11 +481,22 @@ describe('Identity and multi-company isolation (e2e)', () => {
         status: 'PENDING',
       }),
     );
+    expect(supportApproval.status).toBe(403);
     expect(approved.status).toBe(201);
-    expect(approved.body.request.status).toBe('APPROVED');
-    expect(subscription.plan.name).toBe('Pro');
+    expect(approved.body.request.status).toBe('APPROVED_PENDING_PAYMENT');
+    expect(subscription.plan.name).toBe('Basico');
     expect(rejected.status).toBe(201);
     expect(rejected.body.request.status).toBe('REJECTED');
+    expect(cancelled.status).toBe(201);
+    expect(cancelled.body.status).toBe('CANCELLED');
+    expect(requestsAfterReview.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: requested.body.id,
+          status: 'APPROVED_PENDING_PAYMENT',
+        }),
+      ]),
+    );
     expect(instructions.status).toBe(200);
     expect(instructions.body.methods).toEqual(
       expect.arrayContaining([
@@ -6516,6 +6565,10 @@ async function resetDatabase() {
   await prisma.$transaction([
     prisma.subscriptionEvent.deleteMany(),
     prisma.subscriptionPayment.deleteMany(),
+    prisma.paymentWebhookEvent.deleteMany(),
+    prisma.planChangeRequest.updateMany({ data: { checkoutSessionId: null } }),
+    prisma.paymentCheckoutSession.deleteMany(),
+    prisma.planChangeRequest.deleteMany(),
     prisma.subscriptionInvoice.deleteMany(),
     prisma.subscriptionInvoiceSequence.deleteMany(),
     prisma.companySubscription.deleteMany(),

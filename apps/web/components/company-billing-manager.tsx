@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
 import {
+  cancelCompanyPlanChangeRequest,
+  createPlanChangeCheckout,
   getMyBillingEvents,
   getCompanyPaymentInstructions,
   getMyEntitlements,
@@ -48,6 +50,8 @@ export function CompanyBillingManager({
   const [paymentInstructions, setPaymentInstructions] =
     useState<PaymentInstructions | null>(null);
   const [requestingPlan, setRequestingPlan] = useState<string | null>(null);
+  const [cancellingRequest, setCancellingRequest] = useState(false);
+  const [startingCheckout, setStartingCheckout] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -156,9 +160,53 @@ export function CompanyBillingManager({
     }
   }
 
+  async function cancelPendingRequest() {
+    if (!pendingPlanRequest) return;
+    setCancellingRequest(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await cancelCompanyPlanChangeRequest(
+        pendingPlanRequest.id,
+      );
+      setMessage(response.message);
+      setPlanRequests(await getMyPlanChangeRequests());
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo cancelar la solicitud.',
+      );
+    } finally {
+      setCancellingRequest(false);
+    }
+  }
+
+  async function payPlanChange() {
+    if (!latestPlanRequest) return;
+    setStartingCheckout(true);
+    setError('');
+    try {
+      const checkout = await createPlanChangeCheckout(latestPlanRequest.id);
+      if (!checkout.checkoutUrl)
+        throw new Error('PayPal no devolvió un enlace de pago.');
+      window.location.assign(checkout.checkoutUrl);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'No se pudo iniciar el pago.',
+      );
+      setStartingCheckout(false);
+    }
+  }
+
   const latestPlanRequest = planRequests[0] ?? null;
   const pendingPlanRequest = planRequests.find(
-    (request) => request.status === 'PENDING',
+    (request) =>
+      request.status === 'PENDING' ||
+      request.status === 'APPROVED_PENDING_PAYMENT' ||
+      request.status === 'PAYMENT_FAILED',
   );
 
   if (loading) {
@@ -373,17 +421,21 @@ export function CompanyBillingManager({
                 className={`mt-4 rounded-lg border p-4 text-sm ${
                   latestPlanRequest.status === 'PENDING'
                     ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : latestPlanRequest.status === 'APPROVED'
+                    : latestPlanRequest.status === 'APPROVED_APPLIED'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                       : 'border-red-200 bg-red-50 text-red-800'
                 }`}
               >
                 <p className="font-semibold">
                   {latestPlanRequest.status === 'PENDING'
-                    ? `Tu solicitud para cambiar a ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode} esta pendiente de revision.`
-                    : latestPlanRequest.status === 'APPROVED'
-                      ? `Tu plan fue actualizado a ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode}.`
-                      : 'Tu solicitud fue rechazada. Contacta a facturacion para mas detalles.'}
+                    ? `Ya tienes una solicitud pendiente para cambiar a ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode}. Debe ser revisada por Platform Admin.`
+                    : latestPlanRequest.status === 'APPROVED_APPLIED'
+                      ? `Tu solicitud fue aprobada. Tu plan actual ahora es ${latestPlanRequest.requestedPlanName ?? latestPlanRequest.requestedPlanCode}.`
+                      : latestPlanRequest.status === 'APPROVED_PENDING_PAYMENT'
+                        ? 'Cambio aprobado. Completa el pago para aplicar el plan.'
+                        : latestPlanRequest.status === 'CANCELLED'
+                          ? 'Tu solicitud fue cancelada.'
+                          : 'Tu solicitud fue rechazada. Contacta a facturacion para mas detalles.'}
                 </p>
                 <p className="mt-1 text-xs">
                   Solicitada el {formatDateTime(latestPlanRequest.createdAt)}
@@ -391,6 +443,44 @@ export function CompanyBillingManager({
                 {latestPlanRequest.adminNote && (
                   <p className="mt-2">{latestPlanRequest.adminNote}</p>
                 )}
+                {latestPlanRequest.status === 'PENDING' && (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <Button
+                      disabled={cancellingRequest}
+                      onClick={() => void cancelPendingRequest()}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {cancellingRequest
+                        ? 'Cancelando...'
+                        : 'Cancelar solicitud'}
+                    </Button>
+                    <a
+                      className="inline-flex items-center text-sm font-semibold text-blue-700"
+                      href={`mailto:${paymentInstructions?.billingContact.email ?? 'facturacion@comerciaerp.local'}`}
+                    >
+                      Contactar facturacion
+                    </a>
+                  </div>
+                )}
+                {latestPlanRequest.status === 'APPROVED_PENDING_PAYMENT' &&
+                  latestPlanRequest.invoice && (
+                    <div className="mt-3">
+                      <Button
+                        disabled={startingCheckout}
+                        onClick={() => void payPlanChange()}
+                        type="button"
+                      >
+                        {startingCheckout
+                          ? 'Abriendo PayPal...'
+                          : 'Pagar ahora'}
+                      </Button>
+                      <p className="mt-2 text-xs">
+                        Pago seguro alojado por PayPal. Comercia ERP no almacena
+                        tarjeta ni CVV.
+                      </p>
+                    </div>
+                  )}
               </div>
             )}
             <div className="mt-4 grid gap-4 lg:grid-cols-4">
@@ -423,11 +513,13 @@ export function CompanyBillingManager({
                   >
                     {entitlements?.plan.code === plan.code
                       ? 'Plan actual'
-                      : pendingPlanRequest
+                      : pendingPlanRequest?.requestedPlanCode === plan.code
                         ? 'Solicitud pendiente'
-                        : requestingPlan === plan.code
-                          ? 'Enviando...'
-                          : 'Solicitar cambio'}
+                        : pendingPlanRequest
+                          ? 'Espera revision'
+                          : requestingPlan === plan.code
+                            ? 'Enviando...'
+                            : 'Solicitar cambio'}
                   </Button>
                 </div>
               ))}
@@ -470,11 +562,13 @@ export function CompanyBillingManager({
             <h2 className="font-semibold text-slate-950">Metodos de pago</h2>
             <p className="mt-2">{paymentInstructions?.card.notice}</p>
             <p className="mt-2">
-              Pago con tarjeta y cobro automatico aun no estan habilitados.
+              El pago con tarjeta todavia no esta activo porque no hay una
+              pasarela configurada. En produccion se integrara con un proveedor
+              tokenizado como Azul, CardNet, Stripe o PayPal.
             </p>
-            <Button className="mt-4" disabled type="button" variant="secondary">
-              Agregar tarjeta · Proximamente
-            </Button>
+            <span className="mt-4 inline-flex rounded-full border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+              Tarjeta de credito/debito · Proximamente
+            </span>
             <p className="mt-3 text-xs text-slate-500">
               No almacenamos numero de tarjeta, CVV ni datos bancarios
               sensibles. Contacta soporte de facturacion si necesitas un link.

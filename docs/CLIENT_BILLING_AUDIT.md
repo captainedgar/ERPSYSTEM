@@ -120,3 +120,18 @@ manual.
 
 Tarjetas permanecen marcadas como proximamente. No existen campos para numero
 de tarjeta o CVV, tokenizacion, webhooks ni procesamiento automatico.
+
+## Pago con tarjeta - pendiente
+
+La futura implementacion debe seleccionar un proveedor, abrir un checkout
+seguro, tokenizar fuera de Comercia ERP y conservar unicamente identificadores
+como `customerId` y `paymentMethodId`. Los pagos se confirmaran mediante
+webhooks firmados e idempotentes, con manejo de fallos y reintentos. Nunca se
+almacenaran PAN ni CVV y el cumplimiento PCI se delegara al proveedor.
+
+El cliente puede cancelar una solicitud `PENDING` mediante
+`POST /company-billing/plan-change-requests/:id/cancel`. Esto no cambia la
+suscripcion y genera auditoria adicional.
+# Solicitudes y pago online
+
+Las solicitudes se almacenan en `PlanChangeRequest`; `AuditLog` queda solo como auditoría. Solo existe una solicitud activa por empresa. El cliente puede cancelar `PENDING` y pagar `APPROVED_PENDING_PAYMENT` mediante checkout PayPal hosted.

@@ -106,3 +106,17 @@ se derivan inmediatamente del plan asignado.
 La fase no incluye prorrateo, cobro automatico ni creacion automatica de
 facturas. Una futura pasarela debe usar tokenizacion externa, webhooks firmados
 e idempotencia. Comercia ERP no debe almacenar PAN ni CVV.
+
+Las solicitudes pendientes pueden cancelarse por la misma empresa. La
+cancelacion libera la creacion de una solicitud posterior y no modifica el
+plan vigente.
+
+## Pago con tarjeta - pendiente
+
+Requisitos de roadmap: proveedor como Azul, CardNet, Stripe o PayPal; checkout
+seguro; tokenizacion; almacenamiento exclusivo de IDs externos; webhooks
+firmados; reintentos e idempotencia; confirmacion de pago por webhook; y
+cumplimiento PCI delegado al proveedor. PAN y CVV quedan fuera de Comercia ERP.
+# Aplicación de cambios
+
+Un cambio aprobado se aplica después de un pago online confirmado o de una futura acción manual explícita de SUPER_ADMIN. La aprobación ordinaria nunca cambia `CompanySubscription.planId` directamente.

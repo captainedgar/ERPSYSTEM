@@ -145,6 +145,11 @@ export class PlatformBillingController {
     return this.billing.listPlanChangeRequests();
   }
 
+  @Get('billing/payment-providers')
+  paymentProviders() {
+    return this.billing.paymentProviders();
+  }
+
   @Get('billing/plan-change-requests/:id')
   getPlanChangeRequest(@Param('id') id: string) {
     return this.billing.getPlanChangeRequest(id);
@@ -173,6 +178,21 @@ export class PlatformBillingController {
     @Req() request: Request,
   ) {
     return this.billing.rejectPlanChangeRequest(
+      user,
+      id,
+      dto,
+      requestContext(request),
+    );
+  }
+
+  @Post('billing/plan-change-requests/:id/cancel')
+  cancelPlanChangeRequest(
+    @CurrentPlatformUser() user: PlatformAuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewPlanChangeRequestDto,
+    @Req() request: Request,
+  ) {
+    return this.billing.cancelPlanChangeRequest(
       user,
       id,
       dto,

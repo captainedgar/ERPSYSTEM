@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -105,44 +106,64 @@ export class PlatformBillingService {
     });
   }
 
-  async listPlanChangeRequests() {
-    const requests = await this.prisma.auditLog.findMany({
-      where: {
-        action: 'SAAS_PLAN_CHANGE_REQUESTED',
-        module: 'company_billing',
+  paymentProviders() {
+    return [
+      {
+        provider: 'PAYPAL_CHECKOUT',
+        environment: process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox',
+        configured: Boolean(
+          process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET,
+        ),
+        webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
+        status: 'NOT_TESTED',
+        lastTestAt: null,
       },
+    ];
+  }
+
+  async listPlanChangeRequests() {
+    const requests = await this.prisma.planChangeRequest.findMany({
       include: {
         company: { select: { id: true, name: true, status: true } },
-        user: { select: { id: true, name: true, email: true } },
+        currentPlan: true,
+        requestedPlan: true,
+        requestedByUser: { select: { id: true, name: true, email: true } },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            balance: true,
+          },
+        },
+        checkoutSession: true,
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    return requests.map((request) => this.planChangeRequestResponse(request));
+    return requests.map((request) => ({
+      ...request,
+      requestedBy: request.requestedByUser,
+      currentPlanName: request.currentPlan.name,
+      requestedPlanName: request.requestedPlan.name,
+    }));
   }
 
   async getPlanChangeRequest(id: string) {
-    const request = await this.findPlanChangeRequest(id);
-    const subscription = await this.prisma.companySubscription.findUnique({
-      where: { companyId: request.companyId },
-      include: subscriptionInclude,
+    return this.prisma.planChangeRequest.findUniqueOrThrow({
+      where: { id },
+      include: {
+        company: { select: { id: true, name: true, status: true } },
+        currentPlan: true,
+        requestedPlan: true,
+        requestedByUser: { select: { id: true, name: true, email: true } },
+        reviewedByPlatformUser: {
+          select: { id: true, name: true, email: true },
+        },
+        invoice: true,
+        checkoutSession: true,
+      },
     });
-    const metadata = this.objectMetadata(request.metadataJson);
-    const requestedPlanId =
-      typeof metadata.requestedPlanId === 'string'
-        ? metadata.requestedPlanId
-        : null;
-    const requestedPlan = requestedPlanId
-      ? await this.prisma.saasPlan.findUnique({
-          where: { id: requestedPlanId },
-          include: planInclude,
-        })
-      : null;
-    return {
-      ...this.planChangeRequestResponse(request),
-      subscription,
-      requestedPlan,
-    };
   }
 
   async approvePlanChangeRequest(
@@ -153,17 +174,10 @@ export class PlatformBillingService {
   ) {
     this.requireBillingAdmin(user);
     const request = await this.findPlanChangeRequest(id);
-    const metadata = this.objectMetadata(request.metadataJson);
-    this.ensurePendingPlanChange(metadata);
-    const requestedPlanId =
-      typeof metadata.requestedPlanId === 'string'
-        ? metadata.requestedPlanId
-        : null;
-    if (!requestedPlanId) {
-      throw new BadRequestException('La solicitud no contiene un plan valido');
-    }
+    if (request.status !== 'PENDING')
+      throw new ConflictException('La solicitud ya fue revisada');
     const plan = await this.prisma.saasPlan.findFirst({
-      where: { id: requestedPlanId, isActive: true },
+      where: { id: request.requestedPlanId, isActive: true },
     });
     if (!plan)
       throw new BadRequestException('El plan solicitado no esta activo');
@@ -175,10 +189,24 @@ export class PlatformBillingService {
       if (!subscription) {
         throw new BadRequestException('La empresa no tiene suscripcion');
       }
-      const updated = await tx.companySubscription.update({
-        where: { id: subscription.id },
-        data: { planId: plan.id },
-        include: subscriptionInclude,
+      const invoiceNumber = await this.nextInvoiceNumber(tx);
+      const invoice = await tx.subscriptionInvoice.create({
+        data: {
+          companyId: request.companyId,
+          companySubscriptionId: subscription.id,
+          planId: plan.id,
+          invoiceNumber,
+          subtotal: plan.price,
+          total: plan.price,
+          balance: plan.price,
+          billingPeriodStart: subscription.currentPeriodEnd,
+          billingPeriodEnd: this.addBillingInterval(
+            subscription.currentPeriodEnd,
+            plan.billingInterval,
+          ),
+          dueDate: new Date(),
+          createdByPlatformUserId: user.platformUserId,
+        },
       });
       await tx.subscriptionEvent.create({
         data: {
@@ -190,25 +218,24 @@ export class PlatformBillingService {
           createdByPlatformUserId: user.platformUserId,
         },
       });
-      await tx.auditLog.update({
+      const updated = await tx.planChangeRequest.update({
         where: { id },
         data: {
-          metadataJson: {
-            ...metadata,
-            status: 'APPROVED',
-            adminNote: dto.adminNote?.trim() ?? null,
-            reviewedAt: reviewedAt.toISOString(),
-            reviewedByPlatformUserId: user.platformUserId,
-          },
+          status: 'APPROVED_PENDING_PAYMENT',
+          adminNote: dto.adminNote?.trim() ?? null,
+          reviewedAt,
+          approvedAt: reviewedAt,
+          reviewedByPlatformUserId: user.platformUserId,
+          invoiceId: invoice.id,
         },
       });
-      return updated;
+      return { updated, invoice };
     });
     await this.audit.create({
       user,
       action: 'SAAS_PLAN_CHANGE_APPROVED',
       module: 'platform_billing',
-      entityType: 'AuditLog',
+      entityType: 'PlanChangeRequest',
       entityId: id,
       description: `Cambio al plan ${plan.name} aprobado`,
       metadata: { companyId: request.companyId, planId: plan.id },
@@ -216,8 +243,8 @@ export class PlatformBillingService {
     });
     return {
       request: await this.getPlanChangeRequest(id),
-      subscription: result,
-      message: `Solicitud aprobada. El plan fue actualizado a ${plan.name}.`,
+      invoice: result.invoice,
+      message: `Solicitud aprobada. La factura ${result.invoice.invoiceNumber} está pendiente de pago.`,
     };
   }
 
@@ -229,26 +256,24 @@ export class PlatformBillingService {
   ) {
     this.requireBillingAdmin(user);
     const request = await this.findPlanChangeRequest(id);
-    const metadata = this.objectMetadata(request.metadataJson);
-    this.ensurePendingPlanChange(metadata);
+    if (request.status !== 'PENDING')
+      throw new ConflictException('La solicitud ya fue revisada');
     const reviewedAt = new Date();
-    await this.prisma.auditLog.update({
+    await this.prisma.planChangeRequest.update({
       where: { id },
       data: {
-        metadataJson: {
-          ...metadata,
-          status: 'REJECTED',
-          adminNote: dto.adminNote?.trim() ?? null,
-          reviewedAt: reviewedAt.toISOString(),
-          reviewedByPlatformUserId: user.platformUserId,
-        },
+        status: 'REJECTED',
+        adminNote: dto.adminNote?.trim() ?? null,
+        reviewedAt,
+        rejectedAt: reviewedAt,
+        reviewedByPlatformUserId: user.platformUserId,
       },
     });
     await this.audit.create({
       user,
       action: 'SAAS_PLAN_CHANGE_REJECTED',
       module: 'platform_billing',
-      entityType: 'AuditLog',
+      entityType: 'PlanChangeRequest',
       entityId: id,
       description: 'Solicitud de cambio de plan rechazada',
       metadata: { companyId: request.companyId },
@@ -257,6 +282,48 @@ export class PlatformBillingService {
     return {
       request: await this.getPlanChangeRequest(id),
       message: 'Solicitud rechazada.',
+    };
+  }
+
+  async cancelPlanChangeRequest(
+    user: PlatformAuthUser,
+    id: string,
+    dto: ReviewPlanChangeRequestDto,
+    context: PlatformRequestContext,
+  ) {
+    if (user.role !== PlatformRole.SUPER_ADMIN)
+      throw new ForbiddenException(
+        'Solo SUPER_ADMIN puede cancelar administrativamente.',
+      );
+    const request = await this.findPlanChangeRequest(id);
+    if (request.status !== 'PENDING')
+      throw new ConflictException(
+        'Solo se pueden cancelar solicitudes pendientes.',
+      );
+    const cancelledAt = new Date();
+    await this.prisma.planChangeRequest.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt,
+        reviewedAt: cancelledAt,
+        reviewedByPlatformUserId: user.platformUserId,
+        adminNote: dto.adminNote?.trim() ?? null,
+      },
+    });
+    await this.audit.create({
+      user,
+      action: 'SAAS_PLAN_CHANGE_CANCELLED_BY_ADMIN',
+      module: 'platform_billing',
+      entityType: 'PlanChangeRequest',
+      entityId: id,
+      description: 'Solicitud cancelada administrativamente',
+      metadata: { companyId: request.companyId },
+      ...context,
+    });
+    return {
+      request: await this.getPlanChangeRequest(id),
+      message: 'Solicitud cancelada.',
     };
   }
 
@@ -1275,60 +1342,21 @@ export class PlatformBillingService {
   }
 
   private async findPlanChangeRequest(id: string) {
-    const request = await this.prisma.auditLog.findFirst({
-      where: {
-        id,
-        action: 'SAAS_PLAN_CHANGE_REQUESTED',
-        module: 'company_billing',
-      },
+    const request = await this.prisma.planChangeRequest.findUnique({
+      where: { id },
       include: {
         company: { select: { id: true, name: true, status: true } },
-        user: { select: { id: true, name: true, email: true } },
+        currentPlan: true,
+        requestedPlan: true,
+        requestedByUser: { select: { id: true, name: true, email: true } },
+        invoice: true,
+        checkoutSession: true,
       },
     });
     if (!request) {
       throw new NotFoundException('Solicitud de cambio de plan no encontrada');
     }
     return request;
-  }
-
-  private objectMetadata(value: unknown): Record<string, Prisma.JsonValue> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, Prisma.JsonValue>)
-      : {};
-  }
-
-  private ensurePendingPlanChange(metadata: Record<string, Prisma.JsonValue>) {
-    if (metadata.status !== 'PENDING') {
-      throw new BadRequestException('La solicitud ya fue revisada');
-    }
-  }
-
-  private planChangeRequestResponse(request: {
-    id: string;
-    companyId: string;
-    description: string;
-    metadataJson: unknown;
-    createdAt: Date;
-    company: { id: string; name: string; status: CompanyStatus };
-    user: { id: string; name: string; email: string } | null;
-  }) {
-    const metadata = this.objectMetadata(request.metadataJson);
-    return {
-      id: request.id,
-      companyId: request.companyId,
-      company: request.company,
-      requestedBy: request.user,
-      status: metadata.status ?? 'PENDING',
-      currentPlanCode: metadata.currentPlanCode ?? null,
-      currentPlanName: metadata.currentPlanName ?? null,
-      requestedPlanCode: metadata.requestedPlanCode ?? null,
-      requestedPlanName: metadata.requestedPlanName ?? null,
-      adminNote: metadata.adminNote ?? null,
-      reviewedAt: metadata.reviewedAt ?? null,
-      createdAt: request.createdAt,
-      description: request.description,
-    };
   }
 
   private decimal(value: number | string | Prisma.Decimal) {

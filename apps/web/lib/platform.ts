@@ -255,7 +255,14 @@ export interface PlatformPlanChangeRequest {
   companyId: string;
   company: Pick<PlatformCompany, 'id' | 'name' | 'status'>;
   requestedBy?: { id: string; name: string; email: string } | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  status:
+    | 'PENDING'
+    | 'APPROVED_PENDING_PAYMENT'
+    | 'APPROVED_APPLIED'
+    | 'REJECTED'
+    | 'CANCELLED'
+    | 'EXPIRED'
+    | 'PAYMENT_FAILED';
   currentPlanCode?: string | null;
   currentPlanName?: string | null;
   requestedPlanCode?: string | null;
@@ -265,6 +272,16 @@ export interface PlatformPlanChangeRequest {
   createdAt: string;
   subscription?: CompanySubscription | null;
   requestedPlan?: SaasPlan | null;
+  currentPlan?: SaasPlan;
+  invoice?: Pick<
+    SubscriptionInvoice,
+    'id' | 'invoiceNumber' | 'status' | 'balance'
+  > | null;
+  checkoutSession?: {
+    id: string;
+    status: string;
+    checkoutUrl?: string | null;
+  } | null;
 }
 
 export interface SubscriptionEvent {
@@ -438,6 +455,19 @@ export function listPlanChangeRequests() {
   return platformRequest<PlatformPlanChangeRequest[]>(
     '/platform/billing/plan-change-requests',
   );
+}
+
+export function listPaymentProviders() {
+  return platformRequest<
+    Array<{
+      provider: string;
+      environment: string;
+      configured: boolean;
+      webhookConfigured: boolean;
+      status: string;
+      lastTestAt?: string | null;
+    }>
+  >('/platform/billing/payment-providers');
 }
 
 export function getPlanChangeRequest(id: string) {
