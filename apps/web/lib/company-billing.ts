@@ -141,6 +141,13 @@ export function createPlanChangeCheckout(id: string) {
   );
 }
 
+export function capturePayPalCheckout(id: string) {
+  return apiRequest<{ success: true; idempotent: boolean; message: string }>(
+    `/company-billing/checkout-sessions/${encodeURIComponent(id)}/capture`,
+    { method: 'POST' },
+  );
+}
+
 export interface PaymentInstructions {
   methods: Array<{
     code: string;

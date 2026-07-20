@@ -32,6 +32,12 @@ export class CompanyBillingController {
     return this.gateway.getSession(user.companyId, id);
   }
 
+  @Post('checkout-sessions/:id/capture')
+  @RequirePermissions('billing.pay')
+  captureCheckout(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gateway.captureCheckout(user, id);
+  }
+
   @Get('payment-provider-status')
   @RequirePermissions('billing.view')
   paymentProviderStatus() {

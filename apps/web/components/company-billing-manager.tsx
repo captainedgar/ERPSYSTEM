@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import {
   cancelCompanyPlanChangeRequest,
+  capturePayPalCheckout,
   createPlanChangeCheckout,
   getMyBillingEvents,
   getCompanyPaymentInstructions,
@@ -57,7 +58,7 @@ export function CompanyBillingManager({
   const [cancellingRequest, setCancellingRequest] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
   const [message, setMessage] = useState(initialPayPalReturnMessage);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialPayPalReturnError);
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState(0);
 
@@ -110,6 +111,54 @@ export function CompanyBillingManager({
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('paypal') !== 'return') return;
+    const checkoutSessionId = query.get('checkoutSessionId');
+    if (!checkoutSessionId) return;
+    let cancelled = false;
+    void capturePayPalCheckout(checkoutSessionId)
+      .then(async (result) => {
+        if (cancelled) return;
+        setMessage(result.message);
+        const [
+          nextSubscription,
+          nextInvoices,
+          nextPayments,
+          nextEvents,
+          nextEntitlements,
+          nextRequests,
+        ] = await Promise.all([
+          getMySubscription(),
+          getMyInvoices(),
+          getMyPayments(),
+          getMyBillingEvents(),
+          getMyEntitlements(),
+          getMyPlanChangeRequests(),
+        ]);
+        if (cancelled) return;
+        setSubscription(nextSubscription);
+        setInvoices(nextInvoices);
+        setPayments(nextPayments);
+        setEvents(nextEvents);
+        setEntitlements(nextEntitlements);
+        setPlanRequests(nextRequests);
+        window.history.replaceState({}, '', '/settings/billing');
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setMessage('');
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'No se pudo confirmar el pago con PayPal. La solicitud sigue pendiente.',
+        );
       });
     return () => {
       cancelled = true;
@@ -703,7 +752,14 @@ function initialPayPalReturnMessage() {
   );
   if (paypalStatus === 'cancel')
     return 'Cancelaste el checkout en PayPal. No se aplico ningun pago.';
-  if (paypalStatus === 'return')
-    return 'Volviste desde PayPal. El plan se aplicara solo cuando PayPal confirme el pago.';
+  if (paypalStatus === 'return') return 'Confirmando pago con PayPal...';
   return '';
+}
+
+function initialPayPalReturnError() {
+  if (typeof window === 'undefined') return '';
+  const query = new URLSearchParams(window.location.search);
+  return query.get('paypal') === 'return' && !query.get('checkoutSessionId')
+    ? 'No se pudo identificar el checkout devuelto por PayPal.'
+    : '';
 }

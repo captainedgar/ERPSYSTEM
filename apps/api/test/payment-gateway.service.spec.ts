@@ -130,6 +130,9 @@ describe('PaymentGatewayService', () => {
       paymentCheckoutSession: {
         findFirst: jest.fn(() => Promise.resolve(null)),
         create,
+        update: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve({ id: 'checkout-1', ...(data as object) }),
+        ),
       },
     } as unknown as PrismaService;
     const service = new PaymentGatewayService(prisma);
@@ -176,7 +179,12 @@ describe('PaymentGatewayService', () => {
       },
       paymentCheckoutSession: {
         findFirst: jest.fn(() => Promise.resolve(null)),
-        create: jest.fn(({ data }: { data: unknown }) => Promise.resolve(data)),
+        create: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve({ id: 'checkout-2', ...(data as object) }),
+        ),
+        update: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve({ id: 'checkout-2', ...(data as object) }),
+        ),
       },
     } as unknown as PrismaService;
     const service = new PaymentGatewayService(prisma);
@@ -271,6 +279,180 @@ describe('PaymentGatewayService', () => {
         },
       ),
     ).resolves.toEqual({ received: true, duplicate: true });
+  });
+
+  it('rejects capture sessions from another company without calling PayPal', async () => {
+    configureSandbox();
+    const service = new PaymentGatewayService({
+      paymentCheckoutSession: {
+        findFirst: jest.fn(() => Promise.resolve(null)),
+      },
+    } as unknown as PrismaService);
+
+    await expect(
+      service.captureCheckout(
+        { companyId: 'company-2', userId: 'user-2' } as never,
+        'checkout-1',
+      ),
+    ).rejects.toThrow('Checkout PayPal no encontrado.');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects capture sessions without a PayPal order id', async () => {
+    configureSandbox();
+    const service = new PaymentGatewayService({
+      paymentCheckoutSession: {
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'checkout-1',
+            companyId: 'company-1',
+            provider: 'PAYPAL_CHECKOUT',
+            providerOrderId: null,
+            status: 'PENDING',
+            invoice: {},
+            planChangeRequest: null,
+          }),
+        ),
+      },
+    } as unknown as PrismaService);
+
+    await expect(
+      service.captureCheckout(
+        { companyId: 'company-1', userId: 'user-1' } as never,
+        'checkout-1',
+      ),
+    ).rejects.toThrow('El checkout no tiene una orden PayPal.');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('captures a completed order using only the frozen session amount', async () => {
+    configureSandbox();
+    fetchSpy
+      .mockResolvedValueOnce(response({ access_token: 'token' }))
+      .mockResolvedValueOnce(
+        response({
+          id: 'ORDER-1',
+          status: 'COMPLETED',
+          purchase_units: [
+            {
+              payments: {
+                captures: [
+                  {
+                    id: 'CAPTURE-1',
+                    status: 'COMPLETED',
+                    amount: { currency_code: 'USD', value: '2.00' },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+    const session = {
+      id: 'checkout-1',
+      companyId: 'company-1',
+      invoiceId: 'invoice-1',
+      provider: 'PAYPAL_CHECKOUT',
+      providerOrderId: 'ORDER-1',
+      providerAmount: new Prisma.Decimal('2.00'),
+      providerCurrency: 'USD',
+      invoiceAmount: new Prisma.Decimal('117.00'),
+      invoiceCurrency: 'DOP',
+      status: 'PENDING',
+      invoice: {
+        id: 'invoice-1',
+        status: 'PENDING',
+        total: new Prisma.Decimal('117.00'),
+      },
+      planChangeRequest: {
+        id: 'request-1',
+        status: 'APPROVED_PENDING_PAYMENT',
+        requestedPlanId: 'plan-pro',
+      },
+    };
+    const tx = {
+      paymentCheckoutSession: {
+        findUniqueOrThrow: jest.fn(() => Promise.resolve(session)),
+        update: jest.fn(() => Promise.resolve({})),
+      },
+      subscriptionPayment: {
+        findUnique: jest.fn(() => Promise.resolve(null)),
+        create: jest.fn(() => Promise.resolve({})),
+      },
+      companySubscription: {
+        findUniqueOrThrow: jest.fn(() =>
+          Promise.resolve({ id: 'subscription-1' }),
+        ),
+        update: jest.fn(() => Promise.resolve({})),
+      },
+      subscriptionInvoice: { update: jest.fn(() => Promise.resolve({})) },
+      planChangeRequest: { update: jest.fn(() => Promise.resolve({})) },
+      subscriptionEvent: { create: jest.fn(() => Promise.resolve({})) },
+      company: { update: jest.fn(() => Promise.resolve({})) },
+      auditLog: { create: jest.fn(() => Promise.resolve({})) },
+    };
+    const prisma = {
+      paymentCheckoutSession: {
+        findFirst: jest.fn(() => Promise.resolve(session)),
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    } as unknown as PrismaService;
+    const service = new PaymentGatewayService(prisma);
+
+    await expect(
+      service.captureCheckout(
+        { companyId: 'company-1', userId: 'user-1' } as never,
+        'checkout-1',
+      ),
+    ).resolves.toMatchObject({ success: true, idempotent: false });
+    expect(tx.subscriptionPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        amount: session.invoiceAmount,
+        providerCaptureId: 'CAPTURE-1',
+      }) as object,
+    });
+    expect(tx.subscriptionInvoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'PAID' }) as object,
+      }) as object,
+    );
+    expect(tx.planChangeRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: 'APPROVED_APPLIED' },
+      }),
+    );
+    expect(tx.companySubscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ planId: 'plan-pro' }) as object,
+      }) as object,
+    );
+  });
+
+  it('returns idempotently for an already paid checkout without recapturing', async () => {
+    const service = new PaymentGatewayService({
+      paymentCheckoutSession: {
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'checkout-paid',
+            companyId: 'company-1',
+            provider: 'PAYPAL_CHECKOUT',
+            status: 'PAID',
+            invoice: { status: 'PAID' },
+            planChangeRequest: { status: 'APPROVED_APPLIED' },
+          }),
+        ),
+      },
+    } as unknown as PrismaService);
+
+    await expect(
+      service.captureCheckout(
+        { companyId: 'company-1', userId: 'user-1' } as never,
+        'checkout-paid',
+      ),
+    ).resolves.toMatchObject({ success: true, idempotent: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('expires pending checkout sessions through safe reconciliation', async () => {
