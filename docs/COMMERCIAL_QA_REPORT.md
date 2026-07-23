@@ -221,3 +221,27 @@ Primera ejecución validada:
 - 0 acciones destructivas.
 
 La segunda ejecución agregó 0 permisos, confirmando idempotencia.
+
+# QA — Branding & Product Media
+
+## Cobertura
+
+- Logo empresarial aislado por empresa, con carga, reemplazo, eliminación y vista previa.
+- Logo en impresión de documentos internos, sujeto a `printLogo`.
+- Disclaimer no fiscal conservado.
+- Imagen opcional por URL o upload en productos.
+- Miniaturas y placeholder en catálogo, POS y carrito.
+- Validaciones de formato, tamaño y firma de archivos.
+
+## Prueba manual recomendada
+
+1. Como OWNER, abrir `/settings/business`, subir un PNG válido y activar **Imprimir logo**.
+2. Crear una venta, generar un documento interno y comprobar el encabezado en `/internal-documents/{id}/print`.
+3. Crear un producto con imagen subida, comprobar catálogo, búsqueda POS y carrito.
+4. Crear otro producto sin imagen y comprobar el placeholder.
+5. Intentar PDF, SVG, EXE, un PNG falso y una imagen superior al límite; todos deben rechazarse.
+6. Iniciar sesión en otra empresa y confirmar que su branding y rutas son independientes.
+
+## Límite conocido
+
+El almacenamiento es local al nodo de API. Antes de desplegar múltiples instancias debe sustituirse por object storage compartido y respaldado. Esta fase no cambia DGII ni el flujo de facturación fiscal.

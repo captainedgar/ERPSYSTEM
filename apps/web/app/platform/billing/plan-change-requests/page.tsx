@@ -129,28 +129,25 @@ export default function PlanChangeRequestsPage() {
         )}
 
         <div className="mt-5 flex flex-wrap gap-2">
-          {(['active', 'reviewed', 'cancelled', 'all'] as const).map(
-            (option) => (
-              <Button
-                key={option}
-                onClick={() => {
-                  setView(option);
-                  setSelected(null);
-                }}
-                type="button"
-                variant={view === option ? 'primary' : 'secondary'}
-              >
+          {(['active', 'history', 'all'] as const).map((option) => (
+            <Button
+              key={option}
+              onClick={() => {
+                setView(option);
+                setSelected(null);
+              }}
+              type="button"
+              variant={view === option ? 'primary' : 'secondary'}
+            >
+              {
                 {
-                  {
-                    active: 'Activas',
-                    reviewed: 'Revisadas',
-                    cancelled: 'Canceladas',
-                    all: 'Todas',
-                  }[option]
-                }
-              </Button>
-            ),
-          )}
+                  active: 'Activas',
+                  history: 'Historial',
+                  all: 'Todas',
+                }[option]
+              }
+            </Button>
+          ))}
         </div>
 
         <section className={`mt-6 ${platformPanelClass}`}>
@@ -230,10 +227,24 @@ export default function PlanChangeRequestsPage() {
               {selected.requestedBy?.email ?? 'usuario no disponible'}.
             </p>
             {selected.invoice && (
-              <p className="mt-2 text-sm text-slate-600">
-                Factura: {selected.invoice.invoiceNumber} ·{' '}
-                {selected.invoice.status}
-              </p>
+              <div className="mt-2 text-sm text-slate-600">
+                <a
+                  className="font-semibold text-blue-700"
+                  href={`/platform/billing/invoices/${selected.invoice.id}`}
+                >
+                  Factura: {selected.invoice.invoiceNumber}
+                </a>{' '}
+                · {selected.invoice.status}
+                {selected.invoice.payments?.[0] && (
+                  <p className="mt-1">
+                    Pago confirmado: {selected.invoice.payments[0].currency}{' '}
+                    {Number(selected.invoice.payments[0].amount).toFixed(2)} ·{' '}
+                    {selected.invoice.payments[0].reference ??
+                      selected.invoice.payments[0].providerCaptureId ??
+                      'Sin referencia'}
+                  </p>
+                )}
+              </div>
             )}
             {selected.checkoutSession?.checkoutUrl && (
               <a

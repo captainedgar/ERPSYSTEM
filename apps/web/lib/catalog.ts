@@ -89,4 +89,13 @@ export function updateCatalogStatus<T>(
   });
 }
 
+export function uploadProductImage(file: File) {
+  const body = new FormData();
+  body.set('image', file);
+  return apiRequest<{ imageUrl: string }>('/uploads/product-image', {
+    method: 'POST',
+    body,
+  });
+}
+
 export { CatalogStatus, CategoryType };

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { mediaUrl } from '@/lib/media';
 import { hasPermission } from '@/lib/permissions';
 import {
   applyBusinessTemplate,
@@ -15,10 +16,14 @@ import {
   DocumentType,
   getBusinessSettings,
   getBusinessTemplates,
+  getCompanyLogo,
   PaymentMethod,
   updateBusinessSettings,
+  uploadCompanyLogo,
+  deleteCompanyLogo,
   type BusinessSettings,
   type BusinessTemplateDefinition,
+  type CompanyLogo,
 } from '@/lib/business-settings';
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -43,6 +48,8 @@ export function BusinessSettingsForm({
   const { loading: authLoading, user } = useAuth();
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
   const [templates, setTemplates] = useState<BusinessTemplateDefinition[]>([]);
+  const [companyLogo, setCompanyLogo] = useState<CompanyLogo | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
@@ -54,10 +61,15 @@ export function BusinessSettingsForm({
 
   useEffect(() => {
     if (!user) return;
-    void Promise.all([getBusinessSettings(), getBusinessTemplates()])
-      .then(([current, availableTemplates]) => {
+    void Promise.all([
+      getBusinessSettings(),
+      getBusinessTemplates(),
+      getCompanyLogo(),
+    ])
+      .then(([current, availableTemplates, currentLogo]) => {
         setSettings(current);
         setTemplates(availableTemplates);
+        setCompanyLogo(currentLogo);
       })
       .catch((reason: unknown) => {
         setError(
@@ -144,6 +156,23 @@ export function BusinessSettingsForm({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function changeLogo(file?: File) {
+    if (!file) return;
+    setUploadingLogo(true);
+    await runAction(async () => {
+      setCompanyLogo(await uploadCompanyLogo(file));
+      return 'Logo empresarial actualizado.';
+    });
+    setUploadingLogo(false);
+  }
+
+  async function removeLogo() {
+    await runAction(async () => {
+      setCompanyLogo(await deleteCompanyLogo());
+      return 'Logo empresarial eliminado.';
+    });
   }
 
   if (authLoading || loading || !user) {
@@ -257,6 +286,55 @@ export function BusinessSettingsForm({
           >
             Aplicar plantilla recomendada
           </Button>
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
+          <h2 className="text-xl font-semibold">Branding de la empresa</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Usa PNG, JPG o WebP de hasta 2 MB. Recomendamos 512x512 y fondo
+            transparente.
+          </p>
+          <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              {companyLogo?.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={`Logo de ${companyLogo.name}`}
+                  className="h-full w-full object-contain p-2"
+                  src={mediaUrl(companyLogo.logoUrl) ?? undefined}
+                />
+              ) : (
+                <span className="text-sm text-slate-500">Sin logo</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {hasPermission(user, 'companies.update') && (
+                <>
+                  <label className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
+                    {uploadingLogo ? 'Subiendo...' : 'Subir logo'}
+                    <input
+                      accept="image/png,image/jpeg,image/webp"
+                      className="sr-only"
+                      disabled={uploadingLogo}
+                      onChange={(event) =>
+                        void changeLogo(event.target.files?.[0])
+                      }
+                      type="file"
+                    />
+                  </label>
+                  {companyLogo?.logoUrl && (
+                    <Button
+                      onClick={() => void removeLogo()}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Eliminar logo
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </section>
 
         {administrationLinks.length > 0 && (

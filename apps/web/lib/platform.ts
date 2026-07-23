@@ -273,10 +273,21 @@ export interface PlatformPlanChangeRequest {
   subscription?: CompanySubscription | null;
   requestedPlan?: SaasPlan | null;
   currentPlan?: SaasPlan;
-  invoice?: Pick<
-    SubscriptionInvoice,
-    'id' | 'invoiceNumber' | 'status' | 'balance'
-  > | null;
+  invoice?:
+    | (Pick<
+        SubscriptionInvoice,
+        'id' | 'invoiceNumber' | 'status' | 'balance'
+      > & {
+        payments?: Array<{
+          id: string;
+          amount: string | number;
+          currency: string;
+          reference?: string | null;
+          providerCaptureId?: string | null;
+          paidAt: string;
+        }>;
+      })
+    | null;
   checkoutSession?: {
     id: string;
     status: string;
@@ -451,7 +462,7 @@ export function listBillingPayments() {
   return platformRequest<SubscriptionPayment[]>('/platform/billing/payments');
 }
 
-export type PlanChangeRequestView = 'active' | 'reviewed' | 'cancelled' | 'all';
+export type PlanChangeRequestView = 'active' | 'history' | 'all';
 
 export function listPlanChangeRequests(view: PlanChangeRequestView = 'active') {
   return platformRequest<PlatformPlanChangeRequest[]>(
@@ -465,10 +476,14 @@ export function listPaymentProviders() {
       provider: string;
       environment: string;
       configured: boolean;
+      onlinePaymentsEnabled: boolean;
+      clientIdConfigured: boolean;
+      clientSecretConfigured: boolean;
       webhookConfigured: boolean;
       appPublicUrlConfigured: boolean;
       apiPublicUrlConfigured: boolean;
       checkoutCurrency: string;
+      dopUsdRate: number | null;
       currencySupported: boolean;
       warning?: string | null;
       status: string;
@@ -481,7 +496,7 @@ export function testPayPalConnection() {
   return platformRequest<{
     configured: boolean;
     reachable: boolean;
-    environment: 'sandbox';
+    environment: 'sandbox' | 'live';
     testedAt: string;
     error?: string | null;
   }>('/platform/billing/payment-providers/paypal/test-connection', {

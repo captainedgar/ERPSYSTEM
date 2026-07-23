@@ -14,6 +14,7 @@ import { CompanySuspensionGuard } from './common/guards/company-suspension.guard
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { PlanFeatureGuard } from './common/guards/plan-feature.guard';
 import { CompaniesModule } from './companies/companies.module';
+import { validateEnvironment } from './config/environment.validation';
 import { CompanyBillingModule } from './company-billing/company-billing.module';
 import { CompanyEntitlementsModule } from './company-entitlements/company-entitlements.module';
 import { CustomersModule } from './customers/customers.module';
@@ -37,6 +38,7 @@ import { ServicesModule } from './services/services.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { UnitsModule } from './units/units.module';
 import { UsersModule } from './users/users.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -44,6 +46,7 @@ import { UsersModule } from './users/users.module';
       envFilePath: ['../../.env', '.env'],
       ignoreEnvFile: process.env.NODE_ENV === 'test',
       isGlobal: true,
+      validate: validateEnvironment,
     }),
     PrismaModule,
     AuditModule,
@@ -75,6 +78,7 @@ import { UsersModule } from './users/users.module';
     ProductCompatibilityModule,
     ServicesModule,
     ReportsModule,
+    UploadsModule,
   ],
   controllers: [HealthController],
   providers: [

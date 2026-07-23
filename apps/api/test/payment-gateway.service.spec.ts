@@ -55,7 +55,7 @@ describe('PaymentGatewayService', () => {
     expect(service.configuration()).toMatchObject({
       configured: false,
       onlinePaymentsEnabled: false,
-      environment: 'sandbox',
+      environment: 'live',
       sandboxOnly: false,
     });
   });
@@ -69,6 +69,39 @@ describe('PaymentGatewayService', () => {
       checkoutCurrency: 'USD',
       onlinePaymentsEnabled: true,
       conversionConfigured: true,
+      clientIdConfigured: true,
+      clientSecretConfigured: true,
+      dopUsdRate: 58.5,
+    });
+  });
+
+  it('rejects plan-change checkout unless the request is approved pending payment', async () => {
+    configureSandbox();
+    const findPlanChange = jest.fn(() => Promise.resolve(null));
+    const prisma = {
+      subscriptionInvoice: {
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'invoice-1',
+            companyId: 'company-1',
+            balance: new Prisma.Decimal('1000'),
+            currency: 'DOP',
+          }),
+        ),
+      },
+      planChangeRequest: { findFirst: findPlanChange },
+    } as unknown as PrismaService;
+    const service = new PaymentGatewayService(prisma);
+
+    await expect(
+      service.createForInvoice('company-1', 'invoice-1', 'request-failed'),
+    ).rejects.toThrow('La solicitud no admite checkout.');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(findPlanChange).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'request-failed',
+        status: 'APPROVED_PENDING_PAYMENT',
+      }) as object,
     });
   });
 

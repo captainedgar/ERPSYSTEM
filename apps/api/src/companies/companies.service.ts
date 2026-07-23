@@ -107,6 +107,9 @@ export class CompaniesService {
     if (!allowedExtensions.has(originalExtension)) {
       throw new BadRequestException('La extension del logo no es permitida');
     }
+    if (!this.hasValidImageSignature(file.buffer, file.mimetype)) {
+      throw new BadRequestException('El archivo no es una imagen valida');
+    }
 
     const company = await this.prisma.company.findFirstOrThrow({
       where: { id: user.companyId, deletedAt: null },
@@ -214,6 +217,24 @@ export class CompaniesService {
     if (normalized.startsWith('..') || normalized.includes('..')) return;
     await unlink(join(this.logoUploadRoot(), normalized)).catch(
       () => undefined,
+    );
+  }
+
+  private hasValidImageSignature(buffer: Buffer, mimeType: string) {
+    if (mimeType === 'image/png')
+      return buffer
+        .subarray(0, 8)
+        .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg')
+      return (
+        buffer[0] === 0xff &&
+        buffer[1] === 0xd8 &&
+        buffer[buffer.length - 2] === 0xff &&
+        buffer[buffer.length - 1] === 0xd9
+      );
+    return (
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WEBP'
     );
   }
 }

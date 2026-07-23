@@ -29,6 +29,15 @@ export interface BusinessSettings {
   onboardingCompletedAt: string | null;
 }
 
+export interface CompanyLogo {
+  companyId: string;
+  name: string;
+  legalName: string | null;
+  logoUrl: string | null;
+  logoFileKey: string | null;
+  logoUpdatedAt: string | null;
+}
+
 export interface BusinessTemplateDefinition {
   id: BusinessType;
   name: string;
@@ -70,6 +79,23 @@ export function completeBusinessOnboarding() {
     '/business-settings/complete-onboarding',
     { method: 'POST' },
   );
+}
+
+export function getCompanyLogo() {
+  return apiRequest<CompanyLogo>('/companies/me/logo');
+}
+
+export function uploadCompanyLogo(file: File) {
+  const body = new FormData();
+  body.set('logo', file);
+  return apiRequest<CompanyLogo>('/companies/me/logo', {
+    method: 'POST',
+    body,
+  });
+}
+
+export function deleteCompanyLogo() {
+  return apiRequest<CompanyLogo>('/companies/me/logo', { method: 'DELETE' });
 }
 
 export { BusinessType, Currency, DocumentType, PaymentMethod };

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { ProductImage } from '@/components/product-image';
 import { CustomerStatus, listCustomers, type Customer } from '@/lib/customers';
 import {
   PosItemType,
@@ -854,11 +855,14 @@ function PosResultCard({
     <article className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div>
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <span className="text-xs font-semibold text-blue-600 uppercase">
-              {item.type === PosItemType.PRODUCT ? 'Producto' : 'Servicio'}
-            </span>
-            <h3 className="mt-1 font-semibold">{item.name}</h3>
+          <div className="flex min-w-0 gap-3">
+            <ProductImage imageUrl={item.imageUrl} name={item.name} />
+            <div>
+              <span className="text-xs font-semibold text-blue-600 uppercase">
+                {item.type === PosItemType.PRODUCT ? 'Producto' : 'Servicio'}
+              </span>
+              <h3 className="mt-1 font-semibold">{item.name}</h3>
+            </div>
           </div>
           <span className="font-semibold">{currency(Number(item.price))}</span>
         </div>
@@ -967,11 +971,18 @@ function CartLineEditor({
   return (
     <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-medium">{line.name}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {currency(Number(line.price))} · ITBIS {Number(line.taxRate)}%
-          </p>
+        <div className="flex min-w-0 gap-3">
+          <ProductImage
+            className="h-12 w-12"
+            imageUrl={line.imageUrl}
+            name={line.name}
+          />
+          <div>
+            <p className="font-medium">{line.name}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {currency(Number(line.price))} · ITBIS {Number(line.taxRate)}%
+            </p>
+          </div>
         </div>
         <button
           className="text-xs text-rose-300 hover:text-rose-200"
@@ -1091,6 +1102,7 @@ function alternativeToPosItem(item: ProductAlternative): PosItem {
     type: PosItemType.PRODUCT,
     name: item.name,
     description: item.reason,
+    imageUrl: null,
     sku: item.sku,
     barcode: item.barcode,
     price: item.price,

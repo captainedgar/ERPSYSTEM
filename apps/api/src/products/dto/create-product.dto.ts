@@ -3,7 +3,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -80,7 +80,12 @@ export class CreateProductDto {
   allowDiscount?: boolean;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true })
+  @Matches(
+    /^(https?:\/\/[^\s]+|\/uploads\/companies\/[A-Za-z0-9_-]+\/products\/[A-Za-z0-9._-]+)$/i,
+    {
+      message: 'imageUrl debe ser HTTPS/HTTP o una imagen cargada por el ERP',
+    },
+  )
   @MaxLength(500)
   imageUrl?: string;
 }

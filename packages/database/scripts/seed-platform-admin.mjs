@@ -34,6 +34,14 @@ async function main() {
   const password = process.env.PLATFORM_ADMIN_PASSWORD ?? 'Admin12345!';
   const name = process.env.PLATFORM_ADMIN_NAME ?? 'Platform Admin Local';
   const rounds = Number(process.env.BCRYPT_ROUNDS ?? '12');
+  if (
+    process.env.ALLOW_SEED_NON_LOCAL_DB === 'true' &&
+    (!process.env.PLATFORM_ADMIN_PASSWORD || password === 'Admin12345!')
+  ) {
+    throw new Error(
+      'PLATFORM_ADMIN_PASSWORD fuerte y explicita es obligatoria fuera de local.',
+    );
+  }
 
   const user = await prisma.platformUser.upsert({
     where: { email },
@@ -53,10 +61,9 @@ async function main() {
     select: { id: true, email: true, role: true, status: true },
   });
 
-  console.log('Platform admin local user ready.');
+  console.log('Platform admin user ready.');
   console.table([{ email: user.email, role: user.role, status: user.status }]);
-  console.log('Default password: Admin12345!');
-  console.log('Override with PLATFORM_ADMIN_PASSWORD for local use.');
+  console.log('Password configured through PLATFORM_ADMIN_PASSWORD.');
 }
 
 main()

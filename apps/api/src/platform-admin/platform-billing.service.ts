@@ -109,31 +109,16 @@ export class PlatformBillingService {
   }
 
   paymentProviders() {
-    const checkoutCurrency = (
-      process.env.PAYPAL_CHECKOUT_CURRENCY ?? 'DOP'
-    ).toUpperCase();
-    const rate = Number(process.env.PAYPAL_DOP_USD_RATE);
-    const currencySupported =
-      checkoutCurrency === 'USD' && Number.isFinite(rate) && rate > 0;
+    const configuration = this.gateway.configuration();
     return [
       {
+        ...configuration,
         provider: 'PAYPAL_CHECKOUT',
-        environment: 'sandbox',
-        configured: Boolean(
-          process.env.PAYPAL_CLIENT_ID &&
-          process.env.PAYPAL_CLIENT_SECRET &&
-          process.env.APP_PUBLIC_URL &&
-          process.env.API_PUBLIC_URL &&
-          process.env.PAYPAL_ENV !== 'live',
-        ),
-        webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
-        appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
-        apiPublicUrlConfigured: Boolean(process.env.API_PUBLIC_URL),
-        checkoutCurrency,
-        currencySupported,
-        warning: currencySupported
-          ? null
-          : 'DOP no está soportado directamente por PayPal Checkout. Configure conversión USD con PAYPAL_DOP_USD_RATE.',
+        warning: !configuration.webhookConfigured
+          ? 'PAYPAL_WEBHOOK_ID puede omitirse en localhost, pero es obligatorio para staging y produccion.'
+          : configuration.configured
+            ? null
+            : configuration.message,
         status: 'NOT_TESTED',
         lastTestAt: null,
       },
@@ -191,13 +176,13 @@ export class PlatformBillingService {
   }
 
   async listPlanChangeRequests(
-    view: 'active' | 'reviewed' | 'cancelled' | 'all' = 'active',
+    view: 'active' | 'history' | 'reviewed' | 'cancelled' | 'all' = 'active',
   ) {
     const statuses =
       view === 'active'
         ? (['PENDING', 'APPROVED_PENDING_PAYMENT', 'PAYMENT_FAILED'] as const)
-        : view === 'reviewed'
-          ? (['APPROVED_APPLIED', 'REJECTED', 'EXPIRED'] as const)
+        : view === 'history' || view === 'reviewed'
+          ? (['APPROVED_APPLIED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const)
           : view === 'cancelled'
             ? (['CANCELLED'] as const)
             : undefined;
@@ -214,6 +199,18 @@ export class PlatformBillingService {
             invoiceNumber: true,
             status: true,
             balance: true,
+            payments: {
+              select: {
+                id: true,
+                amount: true,
+                currency: true,
+                reference: true,
+                providerCaptureId: true,
+                paidAt: true,
+              },
+              orderBy: { paidAt: 'desc' },
+              take: 1,
+            },
           },
         },
         checkoutSession: true,

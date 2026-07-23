@@ -37,6 +37,7 @@ const documentDetailInclude = {
       email: true,
       address: true,
       logoUrl: true,
+      settings: { select: { printLogo: true } },
     },
   },
   branch: {

@@ -37,3 +37,11 @@ El checkout se aloja en PayPal. Comercia ERP no incluye inputs de PAN/CVV, no al
 `GET /company-billing/payment-provider-status` informa disponibilidad sin exponer credenciales. Si faltan credenciales o URLs públicas, el checkout responde `PAYMENT_PROVIDER_NOT_CONFIGURED`.
 
 Las facturas están en DOP y PayPal Checkout no admite DOP directamente como moneda de pago. Para convertir explícitamente se requieren `PAYPAL_CHECKOUT_CURRENCY=USD` y una tasa positiva `PAYPAL_DOP_USD_RATE`. Sin ambos valores, “Pagar ahora” permanece deshabilitado y el backend responde `PAYMENT_CURRENCY_NOT_SUPPORTED`; nunca se convierte silenciosamente.
+# Actualización: captura local e idempotencia
+
+La preparación de CORS, variables estrictas, migraciones deploy, seeds y webhook
+HTTPS de Sandbox se documenta en `docs/STAGING_DEPLOYMENT.md`.
+
+Para desarrollo local, PayPal retorna a `/settings/billing` con `checkoutSessionId` y el frontend invoca la captura server-side. No se necesita ngrok para este camino. El webhook no se elimina: en staging y producción debe configurarse con HTTPS y `PAYPAL_WEBHOOK_ID`.
+
+La conversión DOP/USD y los importes se congelan en `PaymentCheckoutSession`; el frontend nunca determina el monto a capturar. Consulte `docs/BILLING_QA_REPORT.md` para la matriz completa de QA.

@@ -469,6 +469,14 @@ describe('Identity and multi-company isolation (e2e)', () => {
       undefined,
       superSession.body.accessToken,
     );
+    const historyPlatformRequests = await http<
+      Array<{ id: string; status: string }>
+    >(
+      'GET',
+      '/platform/billing/plan-change-requests?view=history',
+      undefined,
+      superSession.body.accessToken,
+    );
     const requestsAfterReview = await http<
       Array<{ id: string; status: string; requestedPlanCode: string }>
     >(
@@ -526,6 +534,14 @@ describe('Identity and multi-company isolation (e2e)', () => {
       ]),
     );
     expect(allPlatformRequests.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: thirdRequest.body.id,
+          status: 'CANCELLED',
+        }),
+      ]),
+    );
+    expect(historyPlatformRequests.body).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: thirdRequest.body.id,

@@ -7,6 +7,7 @@ export interface PosItem {
   type: PosItemType;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   sku: string | null;
   barcode: string | null;
   price: string | number;

@@ -168,10 +168,13 @@ export interface PaymentProviderStatus {
   provider: 'PAYPAL';
   configured: boolean;
   environment: 'sandbox' | 'live';
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
   webhookConfigured: boolean;
   appPublicUrlConfigured: boolean;
   apiPublicUrlConfigured: boolean;
   checkoutCurrency: string;
+  dopUsdRate: number | null;
   currencySupported: boolean;
   message: string;
 }

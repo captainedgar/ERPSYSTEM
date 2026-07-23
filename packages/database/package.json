@@ -17,6 +17,7 @@
     "test": "node --test",
     "db:generate": "node ./scripts/generate-prisma.mjs",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:validate": "dotenv -e ../../.env -- prisma validate",
     "db:format": "dotenv -e ../../.env -- prisma format",

@@ -95,13 +95,16 @@ export class PaymentGatewayService {
       process.env.PAYPAL_CHECKOUT_CURRENCY ?? 'DOP'
     ).toUpperCase();
     const dopUsdRate = Number(process.env.PAYPAL_DOP_USD_RATE);
+    const clientIdConfigured = Boolean(process.env.PAYPAL_CLIENT_ID);
+    const clientSecretConfigured = Boolean(process.env.PAYPAL_CLIENT_SECRET);
+    const environment = process.env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox';
     const configured = Boolean(
-      process.env.PAYPAL_CLIENT_ID &&
-      process.env.PAYPAL_CLIENT_SECRET &&
+      clientIdConfigured &&
+      clientSecretConfigured &&
       process.env.APP_PUBLIC_URL &&
       process.env.API_PUBLIC_URL,
     );
-    const sandboxOnly = process.env.PAYPAL_ENV !== 'live';
+    const sandboxOnly = environment === 'sandbox';
     const conversionConfigured =
       checkoutCurrency === 'USD' &&
       Number.isFinite(dopUsdRate) &&
@@ -113,20 +116,23 @@ export class PaymentGatewayService {
     const onlinePaymentsEnabled = configured && sandboxOnly && currencyReady;
     return {
       provider: 'PAYPAL',
-      environment: 'sandbox' as const,
+      environment,
       configured: configured && sandboxOnly,
       onlinePaymentsEnabled,
+      clientIdConfigured,
+      clientSecretConfigured,
       webhookConfigured: Boolean(process.env.PAYPAL_WEBHOOK_ID),
       appPublicUrlConfigured: Boolean(process.env.APP_PUBLIC_URL),
       apiPublicUrlConfigured: Boolean(process.env.API_PUBLIC_URL),
       checkoutCurrency,
+      dopUsdRate: conversionConfigured ? dopUsdRate : null,
       currencySupported: currencyReady,
       conversionConfigured,
       sandboxOnly,
       message: !sandboxOnly
         ? 'PayPal Live no esta habilitado en esta fase. Configure PAYPAL_ENV=sandbox.'
         : !configured
-          ? 'Pago online no configurado. Contacta a facturacion o usa transferencia manual.'
+          ? 'Pago online no configurado. Usa transferencia manual o contacta a facturacion.'
           : !currencyReady
             ? 'La moneda actual no esta disponible para PayPal. Contacta facturacion.'
             : 'Pago online disponible con PayPal.',
@@ -205,7 +211,7 @@ export class PaymentGatewayService {
           id: planChangeRequestId,
           companyId,
           invoiceId,
-          status: { in: ['APPROVED_PENDING_PAYMENT', 'PAYMENT_FAILED'] },
+          status: 'APPROVED_PENDING_PAYMENT',
         },
       });
       if (!request)

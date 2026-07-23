@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useAuth } from '@/components/auth-provider';
+import { ProductImage } from '@/components/product-image';
 import {
   CatalogStatus,
   CategoryType,
@@ -13,6 +14,7 @@ import {
   listCatalog,
   updateCatalog,
   updateCatalogStatus,
+  uploadProductImage,
   type Brand,
   type CatalogEntity,
   type CatalogKind,
@@ -468,24 +470,32 @@ export function CatalogManager({ kind }: { kind: CatalogKind }) {
                   className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"
                   key={item.id}
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{item.name}</h3>
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs ${
-                          item.status === CatalogStatus.ACTIVE
-                            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                            : 'border border-slate-200 bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {item.status === CatalogStatus.ACTIVE
-                          ? 'Activo'
-                          : 'Inactivo'}
-                      </span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    {kind === 'products' && (
+                      <ProductImage
+                        imageUrl={(item as Product).imageUrl}
+                        name={item.name}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{item.name}</h3>
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs ${
+                            item.status === CatalogStatus.ACTIVE
+                              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border border-slate-200 bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {item.status === CatalogStatus.ACTIVE
+                            ? 'Activo'
+                            : 'Inactivo'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {summary(kind, item)}
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {summary(kind, item)}
-                    </p>
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -526,6 +536,24 @@ function ProductFields({
   form: FormState;
   units: Unit[];
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  async function upload(file?: File) {
+    if (!file) return;
+    setUploading(true);
+    setUploadError('');
+    try {
+      const result = await uploadProductImage(file);
+      change('imageUrl', result.imageUrl);
+    } catch (reason) {
+      setUploadError(
+        reason instanceof Error ? reason.message : 'No se pudo subir la imagen',
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -589,14 +617,40 @@ function ProductFields({
         label="Permitir descuento"
         onChange={() => change('allowDiscount', !form.allowDiscount)}
       />
-      <label>
-        URL de imagen
-        <input
-          type="url"
-          value={form.imageUrl}
-          onChange={(event) => change('imageUrl', event.target.value)}
-        />
-      </label>
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="font-semibold">Imagen del producto</p>
+        <div className="mt-3 flex items-center gap-4">
+          <ProductImage
+            className="h-20 w-20"
+            imageUrl={form.imageUrl}
+            name={form.name || 'Producto'}
+          />
+          <label className="flex-1">
+            Subir PNG, JPG o WebP (máx. 3 MB)
+            <input
+              accept="image/png,image/jpeg,image/webp"
+              disabled={uploading}
+              onChange={(event) => void upload(event.target.files?.[0])}
+              type="file"
+            />
+          </label>
+        </div>
+        <label className="mt-3">
+          O pegar URL de imagen
+          <input
+            placeholder="https://..."
+            type="url"
+            value={form.imageUrl}
+            onChange={(event) => change('imageUrl', event.target.value)}
+          />
+        </label>
+        {uploading && (
+          <p className="mt-2 text-sm text-blue-600">Subiendo imagen...</p>
+        )}
+        {uploadError && (
+          <p className="mt-2 text-sm text-red-600">{uploadError}</p>
+        )}
+      </section>
     </>
   );
 }

@@ -13,6 +13,7 @@ import {
   type InternalDocumentPrintData,
 } from '@/lib/internal-documents';
 import { hasPermission } from '@/lib/permissions';
+import { mediaUrl } from '@/lib/media';
 
 export function InternalDocumentPrint({ id }: { id: string }) {
   const router = useRouter();
@@ -105,17 +106,30 @@ export function InternalDocumentPrint({ id }: { id: string }) {
       <article className="mx-auto max-w-4xl bg-white p-8 shadow-xl print:max-w-none print:p-0 print:shadow-none">
         <header className="border-b-2 border-slate-900 pb-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">
-                {data.company.legalName || data.company.name}
-              </h1>
-              {data.company.rncOrCedula && (
-                <p className="mt-1 text-sm">
-                  RNC/Cedula: {data.company.rncOrCedula}
-                </p>
+            <div className="flex items-start gap-4">
+              {data.company.settings?.printLogo && data.company.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={`Logo de ${data.company.name}`}
+                  className="h-20 w-20 shrink-0 object-contain"
+                  src={mediaUrl(data.company.logoUrl) ?? undefined}
+                />
               )}
-              <p className="mt-1 text-sm">{data.company.address}</p>
-              <p className="text-sm">{data.company.phone}</p>
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {data.company.legalName || data.company.name}
+                </h1>
+                {data.company.rncOrCedula && (
+                  <p className="mt-1 text-sm">
+                    RNC/Cedula: {data.company.rncOrCedula}
+                  </p>
+                )}
+                <p className="mt-1 text-sm">{data.company.address}</p>
+                <p className="text-sm">{data.company.phone}</p>
+                {data.company.email && (
+                  <p className="text-sm">{data.company.email}</p>
+                )}
+              </div>
             </div>
             <div className="text-left sm:text-right">
               <p className="text-sm tracking-wide uppercase">

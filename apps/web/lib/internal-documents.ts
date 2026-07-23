@@ -52,6 +52,7 @@ export interface InternalDocument {
     email: string | null;
     address: string | null;
     logoUrl: string | null;
+    settings?: { printLogo: boolean } | null;
   };
   branch?: {
     id: string;

@@ -372,9 +372,10 @@ function requireSafeEnvironment() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL es requerido.');
   const { hostname } = new URL(databaseUrl);
-  if (!LOCAL_HOSTS.has(hostname)) {
+  const allowNonLocal = process.env.ALLOW_SEED_NON_LOCAL_DB === 'true';
+  if (!LOCAL_HOSTS.has(hostname) && !allowNonLocal) {
     throw new Error(
-      `El seed demo solo admite bases locales; host recibido: ${hostname}.`,
+      `El seed demo requiere ALLOW_SEED_NON_LOCAL_DB=true fuera de local; host recibido: ${hostname}.`,
     );
   }
 }

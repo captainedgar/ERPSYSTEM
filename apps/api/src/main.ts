@@ -4,18 +4,29 @@ import { NestFactory } from '@nestjs/core';
 import { static as serveStatic } from 'express';
 
 import { AppModule } from './app.module';
-import { getCompanyLogoUploadRoot } from './common/upload-paths';
+import {
+  getCompanyLogoUploadRoot,
+  getCompanyProductUploadRoot,
+} from './common/upload-paths';
+import { getCorsOrigins } from './config/cors.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const port = config.get<number>('API_PORT', 3001);
-  const webPort = config.get<number>('WEB_PORT', 3000);
   const logoUploadsRoot = getCompanyLogoUploadRoot();
 
   app.use(
     '/uploads/company-logos',
     serveStatic(logoUploadsRoot, {
+      fallthrough: false,
+      immutable: true,
+      maxAge: '7d',
+    }),
+  );
+  app.use(
+    '/uploads/companies',
+    serveStatic(getCompanyProductUploadRoot(), {
       fallthrough: false,
       immutable: true,
       maxAge: '7d',
@@ -29,7 +40,7 @@ async function bootstrap() {
     }),
   );
   app.enableCors({
-    origin: `http://localhost:${webPort}`,
+    origin: getCorsOrigins(config),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
   });
   app.enableShutdownHooks();

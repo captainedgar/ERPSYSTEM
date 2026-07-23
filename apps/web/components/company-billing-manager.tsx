@@ -151,13 +151,11 @@ export function CompanyBillingManager({
         setPlanRequests(nextRequests);
         window.history.replaceState({}, '', '/settings/billing');
       })
-      .catch((reason: unknown) => {
+      .catch(() => {
         if (cancelled) return;
         setMessage('');
         setError(
-          reason instanceof Error
-            ? reason.message
-            : 'No se pudo confirmar el pago con PayPal. La solicitud sigue pendiente.',
+          'No se pudo confirmar el pago. Si PayPal completó el cobro, contacta a facturación para reconciliarlo.',
         );
       });
     return () => {
@@ -546,6 +544,30 @@ export function CompanyBillingManager({
                         Pago seguro alojado por PayPal. Comercia ERP no almacena
                         tarjeta ni CVV.
                       </p>
+                      {paymentProvider?.dopUsdRate &&
+                        paymentProvider.checkoutCurrency === 'USD' && (
+                          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                            <p>
+                              Factura:{' '}
+                              {money(Number(latestPlanRequest.invoice.balance))}
+                            </p>
+                            <p>
+                              PayPal:{' '}
+                              {usd(
+                                Number(latestPlanRequest.invoice.balance) /
+                                  paymentProvider.dopUsdRate,
+                              )}
+                            </p>
+                            <p>
+                              Tasa: {paymentProvider.dopUsdRate.toFixed(2)}{' '}
+                              DOP/USD
+                            </p>
+                            <p className="mt-1">
+                              El backend congela monto, moneda y tasa al crear
+                              el checkout.
+                            </p>
+                          </div>
+                        )}
                     </div>
                   )}
               </div>
@@ -728,6 +750,12 @@ function money(value: string | number) {
     style: 'currency',
     currency: 'DOP',
   }).format(Number(value));
+}
+function usd(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(value);
 }
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString('es-DO') : 'N/D';

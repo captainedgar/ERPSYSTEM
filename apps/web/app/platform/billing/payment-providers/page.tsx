@@ -81,6 +81,22 @@ export default function PaymentProvidersPage() {
             </p>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div>
+                <dt className="font-medium">Client ID</dt>
+                <dd>
+                  {provider.clientIdConfigured
+                    ? 'Configurado'
+                    : 'No configurado'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium">Client Secret</dt>
+                <dd>
+                  {provider.clientSecretConfigured
+                    ? 'Configurado'
+                    : 'No configurado'}
+                </dd>
+              </div>
+              <div>
                 <dt className="font-medium">APP_PUBLIC_URL</dt>
                 <dd>
                   {provider.appPublicUrlConfigured
@@ -108,6 +124,14 @@ export default function PaymentProvidersPage() {
                     : 'No disponible'}
                 </dd>
               </div>
+              <div>
+                <dt className="font-medium">Tasa DOP/USD</dt>
+                <dd>
+                  {provider.dopUsdRate
+                    ? `${provider.dopUsdRate.toFixed(2)} DOP/USD`
+                    : 'No configurada'}
+                </dd>
+              </div>
             </dl>
             {provider.warning && (
               <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
@@ -116,8 +140,8 @@ export default function PaymentProvidersPage() {
             )}
             {!provider.configured && (
               <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-                Pago online no configurado. Configure PAYPAL_CLIENT_ID,
-                PAYPAL_CLIENT_SECRET y PAYPAL_WEBHOOK_ID.
+                Pago online no configurado. Revise credenciales, URLs públicas,
+                entorno y política monetaria.
               </p>
             )}
             <p className="mt-3 text-xs text-slate-500">

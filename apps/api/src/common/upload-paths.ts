@@ -1,4 +1,4 @@
-import { join, sep } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 
 export function getApiRoot() {
   return process.cwd().endsWith(`${sep}apps${sep}api`)
@@ -7,5 +7,16 @@ export function getApiRoot() {
 }
 
 export function getCompanyLogoUploadRoot() {
-  return join(getApiRoot(), 'uploads', 'company-logos');
+  return join(getUploadsRoot(), 'company-logos');
+}
+
+export function getCompanyProductUploadRoot() {
+  return join(getUploadsRoot(), 'companies');
+}
+
+export function getUploadsRoot() {
+  const configured = process.env.UPLOADS_DIR?.trim() || 'uploads';
+  return isAbsolute(configured)
+    ? resolve(configured)
+    : resolve(getApiRoot(), configured);
 }

@@ -1,5 +1,8 @@
 # Comercia ERP
 
+La guía de ambiente público está en
+[`docs/STAGING_DEPLOYMENT.md`](docs/STAGING_DEPLOYMENT.md).
+
 ERP/POS web modular y multiempresa para pequeños y medianos negocios de República Dominicana.
 
 ## Requisitos
